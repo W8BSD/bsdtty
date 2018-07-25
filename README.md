@@ -12,3 +12,4 @@ Outstanding issues:
 * There's NO WAY to set terminal attributes without asserting RTS/DTR.
 * There are at least two different 5-bit codesets... likely more since linpsk uses '=' instead of ';'
 * I'm not sure that USOS is handled correctly.
+* I should idle with LTRS, not a mark signal... super tricky.
