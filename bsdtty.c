@@ -189,8 +189,10 @@ input_loop(void)
 					rts ^= 1;
 					state = TIOCM_RTS;
 					if (!rts) {
-						write(tty, " ", 1);
+						write(tty, "\x04", 1);
 						ioctl(tty, TIOCDRAIN);
+						// Space still gets cut off... wait one char
+						usleep(165000);
 					}
 					if (rts && tty == -1)
 						setup_tty();
@@ -200,7 +202,7 @@ input_loop(void)
 					}
 					if (rts) {
 						figs = false;
-						write(tty, "\x1f\r\n", 3);
+						write(tty, "\x1f\x1f\x1f\x08\x02", 5);
 						printf("\r\n------- Start of transmission -------\r\n");
 					}
 					else
@@ -223,7 +225,7 @@ input_loop(void)
 						printf_errno("error sending char 0x%02x", bch);
 					if (b2a[bch] == '\r') {
 						putchar('\n');
-						if (write(tty, "\n", 1) != 1)
+						if (write(tty, "\x02", 1) != 1)
 							printf_errno("error sending linefeed");
 					}
 					fflush(stdout);
