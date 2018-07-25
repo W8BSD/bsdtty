@@ -185,9 +185,13 @@ input_loop(void)
 				if (ch == 3)
 					exit(EXIT_SUCCESS);
 				bch = asc2baudot(toupper(ch), figs);
-				if (ch == '\t' || (tty == -1 && bch != 0)) {
+				if (ch == '\t' || (!rts && bch != 0)) {
 					rts ^= 1;
 					state = TIOCM_RTS;
+					if (!rts) {
+						write(tty, " ", 1);
+						ioctl(tty, TIOCDRAIN);
+					}
 					if (rts && tty == -1)
 						setup_tty();
 					if (ioctl(tty, rts ? TIOCMBIS : TIOCMBIC, &state) != 0) {
@@ -196,10 +200,7 @@ input_loop(void)
 					}
 					if (rts) {
 						figs = false;
-						// I think this is a deedle...
-						write(tty, &fstr[0], 1);
-						write(tty, &fstr[0], 1);
-						write(tty, &fstr[0], 1);
+						write(tty, "\x1f\r\n", 3);
 						printf("\r\n------- Start of transmission -------\r\n");
 					}
 					else
@@ -220,6 +221,11 @@ input_loop(void)
 					bch &= 0x1f;
 					if (write(tty, &bch, 1) != 1)
 						printf_errno("error sending char 0x%02x", bch);
+					if (b2a[bch] == '\r') {
+						putchar('\n');
+						if (write(tty, "\n", 1) != 1)
+							printf_errno("error sending linefeed");
+					}
 					fflush(stdout);
 				}
 				break;
