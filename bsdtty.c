@@ -9,14 +9,6 @@
 #include <termios.h>
 #include <unistd.h>
 
-struct settings {
-	bool	usos;
-	int	baud_n;
-	int	baud_d;
-	int	max_idle;
-	bool	buffer_words;
-};
-
 static void usage(const char *);
 static void printf_errno(const char *format, ...);
 static void input_loop(void);
@@ -153,8 +145,6 @@ asc2baudot(char asc, bool figs)
 		ch = memchr(b2a + 0x20, asc, 0x20);
 	if (ch == NULL)
 		ch = memchr(b2a, asc, 0x40);
-	if (ch == NULL)
-		ch = memchr(us2a + 0x20, asc, 0x20);
 	if (ch == NULL)
 		ch = memchr(us2a, asc, 0x40);
 	if (ch == NULL)
