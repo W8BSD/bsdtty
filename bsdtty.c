@@ -50,6 +50,8 @@ int main(int argc, char **argv)
 
 	tty_name = argv[1];
 
+	setup_tty();
+
 	atexit(done);
 
 	// Now set up the input tty
@@ -75,7 +77,7 @@ static void
 setup_tty(void)
 {
 	struct termios t;
-	int state = TIOCM_DTR;
+	int state = TIOCM_DTR | TIOCM_RTS;
 	struct baud_fraction bf;
 
 	// Set up the UART
@@ -83,29 +85,39 @@ setup_tty(void)
 	if (tty == -1)
 		printf_errno("unable to open %s");
 
-	// There's no way to avoid asserting DTR/RTS on open... kill DTR.
+	/*
+	 * In case stty wasn't used on the init device, turn off DTR and
+	 * CTS hopefully before anyone notices
+	 */
 	if (ioctl(tty, TIOCMBIC, &state) != 0)
-		printf_errno("unable clear DTR");
+		printf_errno("unable clear RTS/DTR");
 
 	if (tcgetattr(tty, &t) == -1)
 		printf_errno("unable to read term caps");
 
 	cfmakeraw(&t);
 
-	// Settings speeds to zero prevents RTS/DTR... but then NOTHING gets set.
-	if (cfsetspeed(&t, 115200) == -1)
-		printf_errno("unable to set speed to 0 baud");
+	/* May as well set to 45 for devices that don't support FBAUD */
+	if (cfsetspeed(&t, 45) == -1)
+		printf_errno("unable to set speed to 45 baud");
 
-	// NOTE: With 8250 compatible UARTs, CS5 | CSTOPB is 1.5 stop bits, not 2
+	/*
+	 * NOTE: With 8250 compatible UARTs, CS5 | CSTOPB is 1.5 stop
+	 * bits, not 2 as documented in the man page.  This is good since
+	 * it's what we want anyway.
+	 */
 	t.c_iflag = IGNBRK;
 	t.c_oflag = 0;
-	t.c_cflag = CS5 | CSTOPB | CLOCAL;
+	t.c_cflag = CS5 | CSTOPB | CLOCAL | CNO_RTSDTR;
 
 	if (tcsetattr(tty, TCSADRAIN, &t) == -1)
 		printf_errno("unable to set attributes");
-	// There's no way to avoid asserting DTR/RTS on tcsetattr... kill DTR.
+
+	if (tcgetattr(tty, &t) == -1)
+		printf_errno("unable to read term caps");
+
 	if (ioctl(tty, TIOCMBIC, &state) != 0)
-		printf_errno("unable clear DTR");
+		printf_errno("unable clear RTS/DTR");
 	bf.bf_numerator = 1000;
 	bf.bf_denominator = 22;
 	ioctl(tty, TIOCSFBAUD, &bf);

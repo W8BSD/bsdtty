@@ -7,9 +7,10 @@ only the 8250 based ones... no USB serial port support yet.
 This also doesn't yet decode RTTY.  It's mostly a test thing for the kernel
 patch.
 
+This currently expects that you add the following line to your /etc/rc.local
+file after installing the patched OS: `/bin/stty -f /dev/ttyu9 -rtsctr`
+
 Outstanding issues:
-* There's NO WAY to open a tty without asserting RTS/DTR.
-* There's NO WAY to set terminal attributes without asserting RTS/DTR.
 * There are at least two different 5-bit codesets... likely more since linpsk uses '=' instead of ';'
 * I'm not sure that USOS is handled correctly.
 * I should idle with LTRS, not a mark signal... super tricky.
