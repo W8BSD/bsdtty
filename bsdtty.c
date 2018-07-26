@@ -196,10 +196,8 @@ input_loop(void)
 						// Space still gets cut off... wait one char
 						usleep(165000);
 					}
-					if (rts && tty == -1)
-						setup_tty();
 					if (ioctl(tty, rts ? TIOCMBIS : TIOCMBIC, &state) != 0) {
-						printf_errno("setting RTS bit");
+						printf_errno("%s RTS bit", rts ? "setting" : "resetting");
 						continue;
 					}
 					if (rts) {
@@ -212,8 +210,8 @@ input_loop(void)
 				}
 				if (bch == 0)
 					bch = 0x1f;	// Deedle...
-				// Send FIGS/LTRS as needed
 				if (bch) {
+					// Send FIGS/LTRS as needed
 					if ((!!(bch & 0x20)) != figs) {
 						figs = !!(bch & 0x20);
 						if (write(tty, &fstr[figs], 1) != 1)
@@ -225,6 +223,7 @@ input_loop(void)
 					bch &= 0x1f;
 					if (write(tty, &bch, 1) != 1)
 						printf_errno("error sending char 0x%02x", bch);
+					// Expand CR to CRLF
 					if (b2a[bch] == '\r') {
 						putchar('\n');
 						if (write(tty, "\x02", 1) != 1)
