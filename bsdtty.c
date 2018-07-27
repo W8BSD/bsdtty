@@ -1,6 +1,8 @@
 #include <ctype.h>
+#include <curses.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <locale.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -14,10 +16,18 @@ static void printf_errno(const char *format, ...);
 static void input_loop(void);
 static void done(void);
 static void setup_tty(void);
+static void setup_curses(void);
+static void w_printf(WINDOW *win, const char *format, ...);
+static void setup_windows(void);
+static char asc2baudot(int asc, bool figs);
 
-static struct termios orig_t;
-static bool israw = false;
 static int tty = -1;
+WINDOW *status;
+WINDOW *status_title;
+WINDOW *rx;
+WINDOW *rx_title;
+WINDOW *tx;
+WINDOW *tx_title;
 
 char *tty_name = NULL;
 
@@ -41,7 +51,6 @@ const char us2a[] = "\x00" "E\nA SIU"
 
 int main(int argc, char **argv)
 {
-	struct termios t;
 	char *err;
 
 	// TODO: Parse a command-line...
@@ -52,21 +61,92 @@ int main(int argc, char **argv)
 
 	setup_tty();
 
+	setlocale(LC_ALL, "");
 	atexit(done);
 
-	// Now set up the input tty
-	if (isatty(STDIN_FILENO)) {
-		if (tcgetattr(STDIN_FILENO, &t) == -1)
-			printf_errno("unable to read stdin term caps");
-		memcpy(&orig_t, &t, sizeof(t));
-		cfmakeraw(&t);
-		if (tcsetattr(STDIN_FILENO, TCSADRAIN, &t) == -1)
-			printf_errno("unable to set stdin attributes");
-		israw = true;
-	}
+	// Now set up curses
+	setup_curses();
 
+	// Finally, do the thing.
 	input_loop();
-	return 0;
+	return EXIT_SUCCESS;
+}
+
+static void
+setup_curses(void)
+{
+	initscr();
+	cbreak();
+	noecho();
+	nonl();
+	keypad(stdscr, TRUE);
+
+	setup_windows();
+}
+
+static void
+setup_windows(void)
+{
+	struct winsize ws;
+	int datrows;
+	int i;
+	int y, x;
+
+	if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1)
+		printf_errno("getting window size");
+	if (ws.ws_row < 6)
+		printf_errno("not enough rows");
+	if (ws.ws_col < 10)
+		printf_errno("not enough columns");
+	datrows = ((ws.ws_row - 4) / 2);
+	if ((status_title = newwin(1, ws.ws_col, 0, 0)) == NULL)
+		printf_errno("creating status_title window");
+	if ((status = newwin(1, ws.ws_col, 1, 0)) == NULL)
+		printf_errno("creating status window");
+	if ((rx_title = newwin(1, ws.ws_col, 2, 0)) == NULL)
+		printf_errno("creating rx_title window");
+	if ((rx = newwin(ws.ws_row - 4 - datrows, ws.ws_col, 3, 0)) == NULL)
+		printf_errno("creating rx window");
+	if ((tx_title = newwin(1, ws.ws_col, ws.ws_row - datrows - 1, 0)) == NULL)
+		printf_errno("creating tx_title window");
+	if ((tx = newwin(datrows, ws.ws_col, ws.ws_row - datrows, 0)) == NULL)
+		printf_errno("creating tx window");
+	wclear(status_title);
+	wclear(status);
+	wclear(rx_title);
+	wclear(rx);
+	wclear(tx_title);
+	wclear(tx);
+	wmove(status_title, 0, 0);
+	wmove(status, 0, 0);
+	wmove(rx_title, 0, 0);
+	wmove(rx, 0, 0);
+	wmove(tx_title, 0, 0);
+	wmove(tx, 0, 0);
+	for (i = 0; i < 3; i++) {
+		waddch(status_title, ACS_HLINE);
+		waddch(rx_title, ACS_HLINE);
+		waddch(tx_title, ACS_HLINE);
+	}
+	waddstr(status_title, " Status ");
+	getyx(status_title, y, x);
+	for (i = x; i < ws.ws_col; i++)
+		waddch(status_title, ACS_HLINE);
+	waddstr(rx_title, " RX ");
+	getyx(rx_title, y, x);
+	for (i = x; i < ws.ws_col; i++)
+		waddch(rx_title, ACS_HLINE);
+	waddstr(tx_title, " TX ");
+	getyx(tx_title, y, x);
+	for (i = x; i < ws.ws_col; i++)
+		waddch(tx_title, ACS_HLINE);
+	wrefresh(status_title);
+	wrefresh(status);
+	wrefresh(rx_title);
+	wrefresh(rx);
+	wrefresh(tx_title);
+	wrefresh(tx);
+	wtimeout(tx, -1);
 }
 
 /*
@@ -122,7 +202,20 @@ setup_tty(void)
 	bf.bf_denominator = 22;
 	ioctl(tty, TIOCSFBAUD, &bf);
 	ioctl(tty, TIOCGFBAUD, &bf);
-	printf("Set baudrate at %f\n", ((double)bf.bf_numerator/bf.bf_denominator));
+}
+
+static void
+w_printf(WINDOW *win, const char *format, ...)
+{
+	char *msg = NULL;
+	va_list ap;
+
+	va_start(ap, format);
+	if (vasprintf(&msg, format, ap) < 0)
+		msg = NULL;
+	va_end(ap);
+	waddstr(win, msg);
+	wrefresh(win);
 }
 
 static void
@@ -133,11 +226,12 @@ printf_errno(const char *format, ...)
 	char *emsg = NULL;
 	va_list ap;
 
+	endwin();
 	va_start(ap, format);
 	if (vasprintf(&msg, format, ap) < 0)
 		msg = NULL;
 	va_end(ap);
-	printf("%s (%s)%s", strerror(eno), msg ? msg : "", israw ? "\r\n" : "\n");
+	printf("%s (%s)\n", strerror(eno), msg ? msg : "");
 	exit(EXIT_FAILURE);
 }
 
@@ -149,7 +243,7 @@ usage(const char *cmd)
 }
 
 static char
-asc2baudot(char asc, bool figs)
+asc2baudot(int asc, bool figs)
 {
 	char *ch = NULL;
 
@@ -164,28 +258,35 @@ asc2baudot(char asc, bool figs)
 	return ch - b2a;
 }
 
+#define HALF_CHAR_TIME	82500
+#define CHAR_TIME	165000
+
 static void
 input_loop(void)
 {
 	fd_set rs;
 	bool figs = false;
-	char ch;
+	int ch;
 	char bch;
 	const char fstr[] = "\x1f\x1b"; // LTRS, FIGS
 	int state;
 	struct timeval tv;
 	bool rts = false;
 	bool dtr = false;
+	int outq;
 
+	tv.tv_sec = 0;
+	tv.tv_usec = HALF_CHAR_TIME;
 	while (1) {
-		FD_ZERO(&rs);
-		FD_SET(STDIN_FILENO, &rs);
-		switch (select(STDIN_FILENO + 1, &rs, NULL, NULL, NULL)) {
-			case 1:
-				if (read(STDIN_FILENO, &ch, 1) != 1)
-					exit(EXIT_SUCCESS);
-				if (ch == 3)
-					exit(EXIT_SUCCESS);
+		wrefresh(tx);
+		ch = wgetch(tx);
+		switch (ch) {
+			case ERR:
+				printf_errno("getting character");
+			case KEY_BREAK:
+			case 3:
+				return;
+			default:
 				bch = asc2baudot(toupper(ch), figs);
 				if (ch == '\t' || (!rts && bch != 0)) {
 					rts ^= 1;
@@ -203,10 +304,10 @@ input_loop(void)
 					if (rts) {
 						figs = false;
 						write(tty, "\x1f\x1f\x1f\x08\x02", 5);
-						printf("\r\n------- Start of transmission -------\r\n");
+						waddstr(tx, "\n------- Start of transmission -------\n");
 					}
 					else
-						printf("\r\n-------- End of transmission --------\r\n");
+						waddstr(tx, "\n-------- End of transmission --------\n");
 				}
 				if (bch == 0)
 					bch = 0x1f;	// Deedle...
@@ -217,7 +318,14 @@ input_loop(void)
 						if (write(tty, &fstr[figs], 1) != 1)
 							printf_errno("error sending FIGS/LTRS");
 					}
-					putchar(b2a[bch]);
+					switch (b2a[bch]) {
+						case 0:
+						case 0x0e:
+						case 0x0f:
+							break;
+						default:
+							waddch(tx, b2a[bch]);
+					}
 					if (b2a[bch] == ' ')
 						figs = false;	// USOS
 					bch &= 0x1f;
@@ -229,11 +337,8 @@ input_loop(void)
 						if (write(tty, "\x02", 1) != 1)
 							printf_errno("error sending linefeed");
 					}
-					fflush(stdout);
 				}
 				break;
-			default:
-				exit(EXIT_SUCCESS);
 		}
 	}
 }
@@ -248,6 +353,6 @@ done(void)
 		state &= ~(TIOCM_RTS | TIOCM_DTR);
 		ioctl(tty, TIOCMSET, &state);
 	}
-	tcsetattr(STDIN_FILENO, TCSADRAIN, &orig_t);
+	endwin();
 	exit(EXIT_SUCCESS);
 }
