@@ -41,6 +41,7 @@ static int tty = -1;
 static char *tty_name = NULL;
 
 /* Audio variables */
+static char *dsp_name = "/dev/dsp8";
 static int dsp = -1;
 static int dsp_rate = 48000;
 static int dsp_channels = 1;
@@ -49,6 +50,12 @@ static int head=0, tail=0;	// Empty when equal
 static size_t dsp_bufmax;
 
 /* RX Stuff */
+static double bp_filter_q = 10;
+static double lp_filter_q1 = 1;
+static double space_freq = 2295;
+static double mark_freq = 2125;
+static int baud_numerator = 1000;
+static int baud_denominator = 22;
 static int last_ro = -1;
 static double phase_rate;
 static double phase = 0;
@@ -236,7 +243,7 @@ setup_tty(void)
 	cfmakeraw(&t);
 
 	/* May as well set to 45 for devices that don't support FBAUD */
-	if (cfsetspeed(&t, 45) == -1)
+	if (cfsetspeed(&t, baud_numerator/baud_denominator) == -1)
 		printf_errno("unable to set speed to 45 baud");
 
 	/*
@@ -256,8 +263,8 @@ setup_tty(void)
 
 	if (ioctl(tty, TIOCMBIC, &state) != 0)
 		printf_errno("unable clear RTS/DTR");
-	bf.bf_numerator = 1000;
-	bf.bf_denominator = 22;
+	bf.bf_numerator = baud_numerator;
+	bf.bf_denominator = baud_denominator;
 	ioctl(tty, TIOCSFBAUD, &bf);
 	ioctl(tty, TIOCGFBAUD, &bf);
 }
@@ -315,9 +322,6 @@ asc2baudot(int asc, bool figs)
 	return ch - b2a;
 }
 
-#define HALF_CHAR_TIME	82500
-#define CHAR_TIME	165000
-
 static void
 input_loop(void)
 {
@@ -326,14 +330,11 @@ input_loop(void)
 	char bch;
 	const char fstr[] = "\x1f\x1b"; // LTRS, FIGS
 	int state;
-	struct timeval tv;
 	bool rts = false;
 	bool rx_mode = true;
 	bool rxfigs = false;
 	int rxstate = -1;
 
-	tv.tv_sec = 0;
-	tv.tv_usec = HALF_CHAR_TIME;
 	while (1) {
 		if (!rx_mode) {	// TX Mode
 			ch = wgetch(tx);
@@ -352,7 +353,7 @@ input_loop(void)
 							write(tty, "\x04", 1);
 							ioctl(tty, TIOCDRAIN);
 							// Space still gets cut off... wait one char
-							usleep(165000);
+							usleep(((1/((double)baud_numerator / baud_denominator))*7.5)*1000000);
 						}
 						if (ioctl(tty, rts ? TIOCMBIS : TIOCMBIC, &state) != 0) {
 							printf_errno("%s RTS bit", rts ? "setting" : "resetting");
@@ -596,7 +597,7 @@ static bool
 get_stop_bit(void)
 {
 	int i;
-	int need = (dsp_rate / (1000 / 22)) * 0.9;
+	int need = (dsp_rate / ((double)baud_numerator / baud_denominator)) * 0.9;
 	int rst = 0;
 	double cv;
 
@@ -647,7 +648,7 @@ current_value(void)
 {
 	int ret;
 	int max;
-	uint16_t tmpbuf[256];
+	uint16_t tmpbuf[4];
 	uint16_t *tb = tmpbuf;
 	double mv, emv, sv, esv, cv;
 	int i, j;
@@ -729,7 +730,7 @@ setup_audio(void)
 	int dsp_buflen;
 	int hfs_buflen;
 
-	dsp = open("/dev/dsp8", O_RDONLY);
+	dsp = open(dsp_name, O_RDONLY);
 	if (dsp == -1)
 		printf_errno("unable to open sound device");
 	i = AFMT_S16_NE;
@@ -738,33 +739,34 @@ setup_audio(void)
 	if (i != AFMT_S16_NE)
 		printf_errno("16-bit native endian audio not supported");
 	if (ioctl(dsp, SNDCTL_DSP_CHANNELS, &dsp_channels) == -1)
-		printf_errno("setting stereo");
+		printf_errno("setting mono");
 	if (ioctl(dsp, SNDCTL_DSP_SPEED, &dsp_rate) == -1)
 		printf_errno("setting sample rate");
-	phase_rate = 1/(dsp_rate/(1000.0/22.0));
-	dsp_buflen = (int)((double)dsp_rate / (1000 / 22)) + 1;
+	phase_rate = 1/(dsp_rate/((double)baud_numerator / baud_denominator));
+	dsp_buflen = (int)((double)dsp_rate / ((double)baud_numerator / baud_denominator)) + 1;
 	dsp_buf = malloc(sizeof(dsp_buf[0]) * dsp_buflen);
 	if (dsp_buf == NULL)
 		printf_errno("allocating dsp buffer");
 	dsp_bufmax = dsp_buflen - 1;
-	hfs_buflen = (dsp_rate/(1000.0/22.0))+1;
+	hfs_buflen = (dsp_rate/((double)baud_numerator / baud_denominator))+1;
 	hfs_buf = malloc(hfs_buflen*sizeof(double));
 	if (hfs_buf == NULL)
 		printf_errno("allocating dsp buffer");
 	hfs_bufmax = hfs_buflen - 1;
 }
 
+// https://shepazu.github.io/Audio-EQ-Cookbook/audio-eq-cookbook.html
 static void
 create_filters(void)
 {
-	calc_bpf_coef(2125, 10, mbpfilt);
+	calc_bpf_coef(mark_freq, bp_filter_q, mbpfilt);
 	mbpbuf[0] = mbpbuf[1] = mbpbuf[2] = mbpbuf[3] = 0.0;
-	calc_bpf_coef(2295, 10, sbpfilt);
+	calc_bpf_coef(space_freq, bp_filter_q, sbpfilt);
 	sbpbuf[0] = sbpbuf[1] = sbpbuf[2] = sbpbuf[3] = 0.0;
 
-	calc_lpf_coef((1000.0/22.0)*1.10, 1, mlpfilt);
+	calc_lpf_coef(((double)baud_numerator / baud_denominator)*1.03, lp_filter_q1, mlpfilt);
 	mlpbuf[0] = mlpbuf[1] = mlpbuf[2] = mlpbuf[3] = 0.0;
-	calc_lpf_coef((1000.0/22.0)*1.10, 1, slpfilt);
+	calc_lpf_coef(((double)baud_numerator / baud_denominator)*1.03, lp_filter_q1, slpfilt);
 	slpbuf[0] = slpbuf[1] = slpbuf[2] = slpbuf[3] = 0.0;
 }
 
@@ -791,7 +793,6 @@ calc_lpf_coef(double f0, double q, double *filt)
 	filt[4] = a[2]/a[0];
 }
 
-// https://shepazu.github.io/Audio-EQ-Cookbook/audio-eq-cookbook.html
 static void
 calc_bpf_coef(double f0, double q, double *filt)
 {
