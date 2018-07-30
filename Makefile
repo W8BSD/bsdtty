@@ -1,3 +1,10 @@
-LDLIBS	+=	-lcurses
+CFLAGS	+=	-Wall -g
+LDLIBS	+=	-lcurses -lm
 
-bsdtty: bsdtty.c
+OBJS = bsdtty.o
+
+bsdtty: ${OBJS}
+	${CC} ${CFLAGS} ${LDFLAGS} ${.ALLSRC} ${LDLIBS} -o ${.TARGET}
+
+clean:
+	rm -f bsdtty ${OBJS}
