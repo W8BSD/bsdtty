@@ -458,7 +458,10 @@ input_loop(void)
 			if (rxstate > 0x20)
 				printf_errno("got a==%d", rxstate);
 			ch = b2a[rxstate+(0x20*rxfigs)];
+			fwrite(&ch, 1, 1, log_file);
 			switch(ch) {
+				case 0:
+					continue;
 				case 0x0f:	// LTRS
 					rxfigs = false;
 					continue;
@@ -469,7 +472,6 @@ input_loop(void)
 					rxfigs = false;
 			}
 			waddch(rx, ch);
-			fwrite(&ch, 1, 1, log_file);
 			wrefresh(rx);
 		}
 	}
