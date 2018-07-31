@@ -30,11 +30,13 @@ static void setup_audio(void);
 static void create_filters(void);
 static void calc_bpf_coef(double f0, double q, double *filt);
 static void calc_lpf_coef(double f0, double q, double *filt);
+static void calc_apf_coef(double f0, double q, double *filt);
 static double bq_filter(double value, double *filt, double *buf);
 static bool get_stop_bit(void);
 static int avail(int head, int tail, int max);
 static int prev(int val, int max);
 static int next(int val, int max);
+static void update_tuning_aid(double mark, double space);
 
 /* UART Stuff */
 static int tty = -1;
@@ -69,6 +71,12 @@ static double sbpfilt[5];
 static double slpfilt[5];
 static double sbpbuf[4];
 static double slpbuf[4];
+// Mark phase filter
+static double mapfilt[5];
+static double mapbuf[4];
+// Space phase filter
+static double sapfilt[5];
+static double sapbuf[4];
 // Hunt for Space
 static double *hfs_buf = NULL;
 static size_t hfs_bufmax;
@@ -90,6 +98,8 @@ static WINDOW *rx;
 static WINDOW *rx_title;
 static WINDOW *tx;
 static WINDOW *tx_title;
+static int tx_width;
+static int tx_height;
 
 static const char b2a[] = "\x00" "E\nA SIU"
 		  "\rDRJNFCK"
@@ -175,6 +185,8 @@ setup_windows(void)
 		printf_errno("creating tx_title window");
 	if ((tx = newwin(datrows, ws.ws_col, ws.ws_row - datrows, 0)) == NULL)
 		printf_errno("creating tx window");
+	tx_width = ws.ws_col;
+	tx_height = datrows;
 	wclear(status_title);
 	wclear(status);
 	wclear(rx_title);
@@ -472,7 +484,7 @@ get_rtty_ch(int state)
 			if (current_value() < 0.0)
 				break;
 			phase += phase_rate;
-			if (phase >= 1.1)
+			if (phase >= 1.6)
 				return -1;
 		}
 	}
@@ -488,8 +500,9 @@ get_rtty_ch(int state)
 		 * synchronization.
 		 */
 		hfs_tail = 0;
-		for (hfs_head = 0; hfs_head < hfs_bufmax; hfs_head++)
+		for (hfs_head = 0; hfs_head <= hfs_bufmax; hfs_head++)
 			hfs_buf[hfs_head] = current_value();
+		hfs_head = hfs_bufmax;
 		hfs_start = hfs_bufmax * 0.133333333333333333;
 		hfs_b0 = hfs_bufmax * 0.266666666666666666;
 		hfs_b1 = hfs_bufmax * 0.4;
@@ -510,11 +523,11 @@ get_rtty_ch(int state)
 			if (hfs_buf[hfs_start] < 0.0 &&
 			    hfs_buf[hfs_stop1] >= 0.0 &&
 			    hfs_buf[hfs_stop2] >= 0.0) {
-				return((hfs_b0 > 0.0) |
-					((hfs_b1 > 0.0) << 1) |
-					((hfs_b2 > 0.0) << 2) |
-					((hfs_b3 > 0.0) << 3) |
-					((hfs_b4 > 0.0) << 4));
+				return (hfs_buf[hfs_b0] > 0.0) |
+					((hfs_buf[hfs_b1] > 0.0) << 1) |
+					((hfs_buf[hfs_b2] > 0.0) << 2) |
+					((hfs_buf[hfs_b3] > 0.0) << 3) |
+					((hfs_buf[hfs_b4] > 0.0) << 4);
 			}
 		}
 
@@ -597,7 +610,7 @@ static bool
 get_stop_bit(void)
 {
 	int i;
-	int need = (dsp_rate / ((double)baud_numerator / baud_denominator)) * 0.9;
+	int need = ((double)dsp_rate / ((double)baud_numerator / baud_denominator)) * 0.9;
 	int rst = 0;
 	double cv;
 
@@ -648,7 +661,7 @@ current_value(void)
 {
 	int ret;
 	int max;
-	uint16_t tmpbuf[4];
+	uint16_t tmpbuf[1];
 	uint16_t *tb = tmpbuf;
 	double mv, emv, sv, esv, cv;
 	int i, j;
@@ -713,6 +726,7 @@ current_value(void)
 	emv = bq_filter(mv*mv, mlpfilt, mlpbuf);
 	sv = bq_filter(dsp_buf[tail], sbpfilt, sbpbuf);
 	esv = bq_filter(sv*sv, slpfilt, slpbuf);
+	update_tuning_aid(bq_filter(mv, mapfilt, mapbuf), bq_filter(sv, sapfilt, sapbuf));
 	tail++;
 	if (tail > dsp_bufmax)
 		tail = 0;
@@ -721,6 +735,84 @@ current_value(void)
 
 	/* Return the current value */
 	return cv;
+}
+
+static void
+update_tuning_aid(double mark, double space)
+{
+	static double *buf = NULL;
+	static int wsamp = 0;
+	static int nsamp = -1;
+	static double maxm = 0;
+	static double maxs = 0;
+	int mmult, smult;
+	int madd, sadd;
+	int phaseadj = 0;
+	int y, x;
+	chtype ch;
+	int och;
+
+	if (nsamp == -1)
+		nsamp = dsp_rate/((((double)baud_numerator / baud_denominator))*7.5);
+	if (buf == NULL) {
+		buf = malloc(sizeof(*buf) * nsamp * 2);
+	}
+	if (phaseadj < 0) {
+		if (wsamp >= phaseadj)
+			buf[(wsamp - phaseadj)*2] = mark;
+		buf[wsamp*2+1] = space;
+	}
+	else {
+		buf[wsamp*2] = mark;
+		if (wsamp >= phaseadj)
+			buf[(wsamp - phaseadj)*2+1] = space;
+	}
+	if (abs(mark) > maxm)
+		maxm = abs(mark);
+	if (abs(space) > maxs)
+		maxs = abs(space);
+	wsamp++;
+
+	mmult = maxm / (tx_width / 2 - 2);
+	smult = maxs / (tx_height / 2 - 2);
+	madd = tx_width / 2;
+	sadd = tx_height / 2;
+	if (wsamp - phaseadj == nsamp) {
+		werase(tx);
+		for (wsamp = 0; wsamp < nsamp; wsamp++) {
+			y = buf[wsamp*2+1] / smult + sadd;
+			x = buf[wsamp*2] / mmult + madd;
+			ch = mvwinch(tx, y, x);
+			switch (ch & A_CHARTEXT) {
+				case ' ':
+					och = '.';
+					break;
+				case '.':
+					och = '+';
+					break;
+				case ',':
+					och = '-';
+					break;
+				case '-':
+					och = '+';
+					break;
+				case '+':
+					och = '#';
+					break;
+				case '#':
+					och = '#';
+					break;
+				case ERR & A_CHARTEXT:
+					printf_errno("no char %02x (%d) at %d %d %d %lf %lf", ch, ch, y, x, tx_width, maxm, buf[wsamp*2]);
+				default:
+					printf_errno("no char %02x (%d) at %d %d", ch, ch, y, x);
+			}
+			mvwaddch(tx, buf[wsamp*2+1] / smult + sadd, buf[wsamp*2] / mmult + madd, och);
+		}
+		wmove(tx, 0, 0);
+		wrefresh(tx);
+		wsamp = 0;
+	}
 }
 
 static void
@@ -742,13 +834,13 @@ setup_audio(void)
 		printf_errno("setting mono");
 	if (ioctl(dsp, SNDCTL_DSP_SPEED, &dsp_rate) == -1)
 		printf_errno("setting sample rate");
-	phase_rate = 1/(dsp_rate/((double)baud_numerator / baud_denominator));
+	phase_rate = 1/((double)dsp_rate/((double)baud_numerator / baud_denominator));
 	dsp_buflen = (int)((double)dsp_rate / ((double)baud_numerator / baud_denominator)) + 1;
 	dsp_buf = malloc(sizeof(dsp_buf[0]) * dsp_buflen);
 	if (dsp_buf == NULL)
 		printf_errno("allocating dsp buffer");
 	dsp_bufmax = dsp_buflen - 1;
-	hfs_buflen = (dsp_rate/((double)baud_numerator / baud_denominator))+1;
+	hfs_buflen = ((double)dsp_rate/((double)baud_numerator / baud_denominator)) * 7.5 + 1;
 	hfs_buf = malloc(hfs_buflen*sizeof(double));
 	if (hfs_buf == NULL)
 		printf_errno("allocating dsp buffer");
@@ -759,15 +851,33 @@ setup_audio(void)
 static void
 create_filters(void)
 {
+	/* TODO: Look into "Matched Filters"... all the rage */
 	calc_bpf_coef(mark_freq, bp_filter_q, mbpfilt);
 	mbpbuf[0] = mbpbuf[1] = mbpbuf[2] = mbpbuf[3] = 0.0;
 	calc_bpf_coef(space_freq, bp_filter_q, sbpfilt);
 	sbpbuf[0] = sbpbuf[1] = sbpbuf[2] = sbpbuf[3] = 0.0;
 
-	calc_lpf_coef(((double)baud_numerator / baud_denominator)*1.03, lp_filter_q1, mlpfilt);
+	/*
+	 * TODO: Do we need to get the envelopes separately, or just
+	 * take the envelope of the differences?
+	 */
+	calc_lpf_coef(((double)baud_numerator / baud_denominator)*1.1, lp_filter_q1, mlpfilt);
 	mlpbuf[0] = mlpbuf[1] = mlpbuf[2] = mlpbuf[3] = 0.0;
-	calc_lpf_coef(((double)baud_numerator / baud_denominator)*1.03, lp_filter_q1, slpfilt);
+	calc_lpf_coef(((double)baud_numerator / baud_denominator)*1.1, lp_filter_q1, slpfilt);
 	slpbuf[0] = slpbuf[1] = slpbuf[2] = slpbuf[3] = 0.0;
+
+	/*
+	 * These are here to fix the phasing for the crossed bananas
+	 * display.  The centre frequencies aren't calculated, they were
+	 * selected via trial and error, so likely don't work for other
+	 * mark/space frequencies.
+	 * 
+	 * TODO: Figure out how to calculate phase in biquad IIR filters.
+	 */
+	calc_apf_coef(mark_freq / 1.75, 1, mapfilt);
+	mapbuf[0] = mapbuf[1] = mapbuf[2] = mapbuf[3] = 0.0;
+	calc_apf_coef(space_freq * 1.75, 1, sapfilt);
+	sapbuf[0] = sapbuf[1] = sapbuf[2] = sapbuf[3] = 0.0;
 }
 
 static void
@@ -807,6 +917,30 @@ calc_bpf_coef(double f0, double q, double *filt)
 	b[0] = alpha;
 	b[1] = 0.0;
 	b[2] = -(b[0]);
+	a[0] = 1.0 + alpha;
+	a[1] = -2.0 * cw0;
+	a[2] = 1.0 - alpha;
+	filt[0] = b[0]/a[0];
+	filt[1] = b[1]/a[0];
+	filt[2] = b[2]/a[0];
+	filt[3] = a[1]/a[0];
+	filt[4] = a[2]/a[0];
+}
+
+static void
+calc_apf_coef(double f0, double q, double *filt)
+{
+	double w0, cw0, sw0, a[5], b[5], alpha;
+
+	w0 = 2.0 * M_PI * (f0 / dsp_rate);
+	cw0 = cos(w0);
+	sw0 = sin(w0);
+	alpha = sw0 / (2.0 * q);
+
+	//b[0] = q * alpha;
+	b[0] = 1 - alpha;
+	b[1] = -2 * cw0;
+	b[2] = 1 + alpha;
 	a[0] = 1.0 + alpha;
 	a[1] = -2.0 * cw0;
 	a[2] = 1.0 - alpha;
