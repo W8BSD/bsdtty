@@ -211,6 +211,16 @@ setup_windows(void)
 		printf_errno("creating tx window");
 	tx_width = ws.ws_col;
 	tx_height = datrows;
+	scrollok(status_title, FALSE);
+	scrollok(status, FALSE);
+	scrollok(rx_title, FALSE);
+	idlok(rx, TRUE);
+	wsetscrreg(rx, 0, ws.ws_row - 4 - datrows - 1);
+	scrollok(rx, TRUE);
+	scrollok(tx_title, FALSE);
+	idlok(tx, TRUE);
+	wsetscrreg(tx, 0, datrows - 1);
+	scrollok(tx, TRUE);
 	wclear(status_title);
 	wclear(status);
 	wclear(rx_title);
@@ -418,6 +428,10 @@ input_loop(void)
 							case 0x0f:
 								fwrite(&b2a[(int)bch], 1, 1, log_file);
 								break;
+							case '\r':
+								waddch(tx, '\n');
+								if (write(tty, "\x02", 1) != 1)
+									printf_errno("error sending linefeed");
 							default:
 								waddch(tx, b2a[(int)bch]);
 								fwrite(&b2a[(int)bch], 1, 1, log_file);
@@ -428,11 +442,6 @@ input_loop(void)
 						if (write(tty, &bch, 1) != 1)
 							printf_errno("error sending char 0x%02x", bch);
 						// Expand CR to CRLF
-						if (b2a[(int)bch] == '\r') {
-							putchar('\n');
-							if (write(tty, "\x02", 1) != 1)
-								printf_errno("error sending linefeed");
-						}
 						wrefresh(tx);
 					}
 					break;
@@ -746,9 +755,11 @@ current_value(void)
 		ret = ioctl(dsp, SNDCTL_DSP_GETERROR, &errinfo);
 		if (ret == -1)
 			printf_errno("reading audio errors");
+#if 0
 		if (last_ro != -1 && errinfo.rec_overruns)
 			printf_errno("rec_overrun (%d)", errinfo.rec_overruns);
 		last_ro = 0;
+#endif
 	}
 
 	if (tail == head)
