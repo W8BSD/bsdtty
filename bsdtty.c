@@ -462,6 +462,8 @@ input_loop(void)
 			switch(ch) {
 				case 0:
 					continue;
+				case 0x07:	// BEL
+					continue;
 				case 0x0f:	// LTRS
 					rxfigs = false;
 					continue;
