@@ -1,1 +1,3 @@
 bsdtty
+bsdtty.log
+*.o

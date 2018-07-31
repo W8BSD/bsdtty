@@ -1,5 +1,6 @@
 #include <sys/soundcard.h>
 #include <sys/stat.h>
+
 #include <ctype.h>
 #include <curses.h>
 #include <errno.h>
@@ -12,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 static void usage(const char *);
@@ -37,6 +39,7 @@ static int avail(int head, int tail, int max);
 static int prev(int val, int max);
 static int next(int val, int max);
 static void update_tuning_aid(double mark, double space);
+static void setup_log(void);
 
 /* UART Stuff */
 static int tty = -1;
@@ -101,6 +104,10 @@ static WINDOW *tx_title;
 static int tx_width;
 static int tx_height;
 
+/* Log thing */
+static FILE *log_file;
+static char *log_name = "bsdtty.log";
+
 static const char b2a[] = "\x00" "E\nA SIU"
 		  "\rDRJNFCK"
 		  "TZLWHYPQ"
@@ -141,9 +148,26 @@ int main(int argc, char **argv)
 	// Set up the audio stuff.
 	setup_audio();
 
+	// Set up the log file
+	setup_log();
+
 	// Finally, do the thing.
 	input_loop();
 	return EXIT_SUCCESS;
+}
+
+static void
+setup_log(void)
+{
+	time_t now;
+
+	if (log_file != NULL)
+		fclose(log_file);
+	log_file = fopen(log_name, "wb");
+	if (log_file == NULL)
+		printf_errno("opening log file");
+	now = time(NULL);
+	fprintf(log_file, "\r\n\r\n%s\r\n", ctime(&now));
 }
 
 static void
@@ -392,9 +416,11 @@ input_loop(void)
 							case 0:
 							case 0x0e:
 							case 0x0f:
+								fwrite(&b2a[(int)bch], 1, 1, log_file);
 								break;
 							default:
 								waddch(tx, b2a[(int)bch]);
+								fwrite(&b2a[(int)bch], 1, 1, log_file);
 						}
 						if (b2a[(int)bch] == ' ')
 							figs = false;	// USOS
@@ -443,6 +469,7 @@ input_loop(void)
 					rxfigs = false;
 			}
 			waddch(rx, ch);
+			fwrite(&ch, 1, 1, log_file);
 			wrefresh(rx);
 		}
 	}
