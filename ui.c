@@ -45,9 +45,9 @@ static WINDOW *tx_title;
 static int tx_width;
 static int tx_height;
 
+static void do_endwin(void);
 static void setup_windows(void);
 static void w_printf(WINDOW *win, const char *format, ...);
-static void do_endwin(void);
 
 void
 setup_curses(void)

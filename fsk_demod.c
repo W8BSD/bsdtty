@@ -83,22 +83,25 @@ static uint16_t *dsp_buf;
 static int head=0, tail=0;	// Empty when equal
 static size_t dsp_bufmax;
 
-static int	avail(int head, int tail, int max);
-static double	bq_filter(double value, double *filt, double *buf);
-static void	calc_apf_coef(double f0, double q, double *filt);
-static void	calc_bpf_coef(double f0, double q, double *filt);
-static void	calc_lpf_coef(double f0, double q, double *filt);
-static void	create_filters(void);
-static double	current_value(void);
-static bool	get_bit(void);
-static bool	get_stop_bit(void);
-static int	next(int val, int max);
-static int	prev(int val, int max);
+static int avail(int head, int tail, int max);
+static double bq_filter(double value, double *filt, double *buf);
+static void calc_apf_coef(double f0, double q, double *filt);
+static void calc_bpf_coef(double f0, double q, double *filt);
+static void calc_lpf_coef(double f0, double q, double *filt);
+static void create_filters(void);
+static double current_value(void);
+static bool get_bit(void);
+static bool get_stop_bit(void);
+static int next(int val, int max);
+static int prev(int val, int max);
+static void setup_audio(void);
 
 void
 setup_rx(void)
 {
 	int hfs_buflen;
+
+	setup_audio();
 
 	phase_rate = 1/((double)settings.dsp_rate/((double)settings.baud_numerator / settings.baud_denominator));
 	hfs_buflen = ((double)settings.dsp_rate/((double)settings.baud_numerator / settings.baud_denominator)) * 7.5 + 1;
@@ -107,31 +110,6 @@ setup_rx(void)
 		printf_errno("allocating dsp buffer");
 	hfs_bufmax = hfs_buflen - 1;
 	create_filters();
-}
-
-void
-setup_audio(void)
-{
-	int i;
-	int dsp_buflen;
-
-	dsp = open(settings.dsp_name, O_RDONLY);
-	if (dsp == -1)
-		printf_errno("unable to open sound device");
-	i = AFMT_S16_NE;
-	if (ioctl(dsp, SNDCTL_DSP_SETFMT, &i) == -1)
-		printf_errno("setting format");
-	if (i != AFMT_S16_NE)
-		printf_errno("16-bit native endian audio not supported");
-	if (ioctl(dsp, SNDCTL_DSP_CHANNELS, &dsp_channels) == -1)
-		printf_errno("setting mono");
-	if (ioctl(dsp, SNDCTL_DSP_SPEED, &settings.dsp_rate) == -1)
-		printf_errno("setting sample rate");
-	dsp_buflen = (int)((double)settings.dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator)) + 1;
-	dsp_buf = malloc(sizeof(dsp_buf[0]) * dsp_buflen);
-	if (dsp_buf == NULL)
-		printf_errno("allocating dsp buffer");
-	dsp_bufmax = dsp_buflen - 1;
 }
 
 int
@@ -250,6 +228,31 @@ reset_rx(void)
 #ifdef RX_OVERRUNS
 	last_ro = -1;
 #endif
+}
+
+static void
+setup_audio(void)
+{
+	int i;
+	int dsp_buflen;
+
+	dsp = open(settings.dsp_name, O_RDONLY);
+	if (dsp == -1)
+		printf_errno("unable to open sound device");
+	i = AFMT_S16_NE;
+	if (ioctl(dsp, SNDCTL_DSP_SETFMT, &i) == -1)
+		printf_errno("setting format");
+	if (i != AFMT_S16_NE)
+		printf_errno("16-bit native endian audio not supported");
+	if (ioctl(dsp, SNDCTL_DSP_CHANNELS, &dsp_channels) == -1)
+		printf_errno("setting mono");
+	if (ioctl(dsp, SNDCTL_DSP_SPEED, &settings.dsp_rate) == -1)
+		printf_errno("setting sample rate");
+	dsp_buflen = (int)((double)settings.dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator)) + 1;
+	dsp_buf = malloc(sizeof(dsp_buf[0]) * dsp_buflen);
+	if (dsp_buf == NULL)
+		printf_errno("allocating dsp buffer");
+	dsp_bufmax = dsp_buflen - 1;
 }
 
 /*

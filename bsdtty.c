@@ -142,9 +142,6 @@ int main(int argc, char **argv)
 	// Set up the FSK stuff.
 	setup_rx();
 
-	// Set up the audio stuff.
-	setup_audio();
-
 	// Set up the log file
 	setup_log();
 
