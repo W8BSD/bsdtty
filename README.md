@@ -17,3 +17,6 @@ Outstanding issues:
 * I'm not sure that USOS is handled correctly.
 * I should idle with LTRS, not a mark signal... super tricky.
 * There should be a config file so you don't need to write a script if you're not me.
+* You should be able to switch the shift by moving the mouse over it
+* Perhaps support for reversing RX, maybe with autodetect
+* Macros... at least a CQ macro
