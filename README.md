@@ -4,8 +4,7 @@ https://reviews.freebsd.org/D16402
 This does hardware keyed RTTY using a UART.  UARTs supported by the patch are
 only the 8250 based ones... no USB serial port support yet.
 
-It also decodes RTTY, but uses the TS-940S mark and space frequencies only
-(2125 and 2295 respectively).
+It also decodes RTTY.
 
 There's also an ASCII "scrossed bananas" tuning aid.
 
