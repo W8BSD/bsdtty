@@ -6,7 +6,7 @@ only the 8250 based ones... no USB serial port support yet.
 
 It also decodes RTTY.
 
-There's also an ASCII "scrossed bananas" tuning aid.
+There's also an ASCII "crossed bananas" tuning aid.
 
 This currently expects that you add the following line to your /etc/rc.local
 file after installing the patched OS: `/bin/stty -f /dev/ttyu9 -rtsctr`
