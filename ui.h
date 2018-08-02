@@ -3,6 +3,12 @@
 
 #include <stdbool.h>
 
+#define RTTY_FUNC_KEY		0x01E0
+#define RTTY_FUNC_KEY_MASK	0x001f
+#define RTTY_IS_FKEY(x)		((x & RTTY_FUNC_KEY) == RTTY_FUNC_KEY)
+#define RTTY_FKEY(x)		(RTTY_FUNC_KEY | x)
+#define RTTY_FKEY_VAL(x)	(x & RTTY_FUNC_KEY_MASK)
+
 void setup_curses(void);
 void update_tuning_aid(double mark, double space);
 void mark_tx_extent(bool start);
@@ -11,5 +17,6 @@ void write_tx(char ch);
 void write_rx(char ch);
 bool check_input(void);
 void printf_errno(const char *format, ...);
+void show_reverse(bool rev);
 
 #endif

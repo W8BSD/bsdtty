@@ -27,6 +27,8 @@
 #include <sys/ioctl.h>
 #include <curses.h>
 #include <errno.h>
+#include <math.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <string.h>
 #include <stdlib.h>
@@ -57,7 +59,6 @@ setup_curses(void)
 	raw();		// cbreak() leaves SIGINT working
 	noecho();
 	nonl();
-	keypad(stdscr, TRUE);
 
 	setup_windows();
 }
@@ -156,6 +157,34 @@ get_input(void)
 	int ret;
 
 	ret = wgetch(tx);
+	switch(ret) {
+		case ERR:
+			return -1;
+		case KEY_BREAK:
+			return 3;
+		case KEY_F(1):
+			return RTTY_FKEY(1);
+		case KEY_F(2):
+			return RTTY_FKEY(2);
+		case KEY_F(3):
+			return RTTY_FKEY(3);
+		case KEY_F(4):
+			return RTTY_FKEY(4);
+		case KEY_F(5):
+			return RTTY_FKEY(5);
+		case KEY_F(6):
+			return RTTY_FKEY(6);
+		case KEY_F(7):
+			return RTTY_FKEY(7);
+		case KEY_F(8):
+			return RTTY_FKEY(8);
+		case KEY_F(9):
+			return RTTY_FKEY(9);
+		case KEY_F(10):
+			return RTTY_FKEY(10);
+		default:
+			return ret;
+	}
 	if (ret == ERR)		// Map ERR to -1
 		return -1;
 	if (ret == KEY_BREAK)	// Map KEY_BREAK to ^C
@@ -284,6 +313,8 @@ setup_windows(void)
 	wrefresh(tx);
 	wtimeout(tx, -1);
 	wtimeout(rx, 0);
+	keypad(rx, TRUE);
+	keypad(tx, TRUE);
 }
 
 static void
@@ -304,4 +335,11 @@ static void
 do_endwin(void)
 {
 	endwin();
+}
+
+void
+show_reverse(bool rev)
+{
+	mvwaddstr(status, 0, 1, rev ? "REV" : "   ");
+	wrefresh(status);
 }

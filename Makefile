@@ -1,4 +1,4 @@
-CFLAGS	+=	-Wall -g
+CFLAGS	+=	-Wall -g -O0
 LDLIBS	+=	-lcurses -lm
 
 OBJS = bsdtty.o fsk_demod.o ui.o

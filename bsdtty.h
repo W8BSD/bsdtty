@@ -12,6 +12,7 @@ struct bt_settings {
 	int	dsp_rate;
 	int	baud_denominator;
 	int	baud_numerator;
+	char	*macros[10];
 };
 
 extern struct bt_settings settings;

@@ -44,8 +44,12 @@
 #include "ui.h"
 
 static char asc2baudot(int asc, bool figs);
+static bool do_macro(int fkey, bool *figs);
+static bool do_tx(void);
 static void done(void);
+static bool get_rts(void);
 static void input_loop(void);
+static void send_char(const char ch, bool *figs);
 static void setup_log(void);
 static void setup_tty(void);
 static int strtoi(const char *, char **endptr, int base);
@@ -61,11 +65,15 @@ struct bt_settings settings = {
 	.mark_freq = 2125,
 	.space_freq = 2295,
 	.tty_name = "/dev/ttyu9",
-	.dsp_name = "/dev/dsp8"
+	.dsp_name = "/dev/dsp8",
+	.macros = {NULL, "CQ CQ CQ CQ CQ CQ DE W8BSD W8BSD W8BSD PSE K"}
 };
 
 /* UART Stuff */
 static int tty = -1;
+
+/* RX in reverse mode */
+static bool reverse = false;
 
 /* Log thing */
 static FILE *log_file;
@@ -92,8 +100,8 @@ int main(int argc, char **argv)
 {
 	int ch;
 
-	while ((ch = getopt(argc, argv, "d:l:m:n:p:q:Q:r:s:t:")) != -1) {
-		while (isspace(*optarg))
+	while ((ch = getopt(argc, argv, "d:l:m:n:p:q:Q:r:s:t:1:2:3:4:5:6:7:8:9:0:")) != -1) {
+		while (optarg && isspace(*optarg))
 			optarg++;
 		switch (ch) {
 			case 'n':	// baud_numerator
@@ -125,6 +133,20 @@ int main(int argc, char **argv)
 				break;
 			case 'p':	// dsp_name
 				settings.dsp_name = strdup(optarg);
+				break;
+			case '1':
+			case '2':
+			case '3':
+			case '4':
+			case '5':
+			case '6':
+			case '7':
+			case '8':
+			case '9':
+				settings.macros[ch-'1'] = strdup(optarg);
+				break;
+			case '0':
+				settings.macros[9] = strdup(optarg);
 				break;
 			default:
 				usage(argv[0]);
@@ -239,83 +261,18 @@ asc2baudot(int asc, bool figs)
 static void
 input_loop(void)
 {
-	bool figs = false;
-	int ch;
-	char bch;
-	const char fstr[] = "\x1f\x1b"; // LTRS, FIGS
-	int state;
-	bool rts = false;
 	bool rx_mode = true;
 	bool rxfigs = false;
 	int rxstate = -1;
+	char ch;
 
 	while (1) {
 		if (!rx_mode) {	// TX Mode
-			ch = get_input();
-			switch (ch) {
-				case -1:
-					printf_errno("getting character");
-				case 3:
-					return;
-				default:
-					bch = asc2baudot(toupper(ch), figs);
-					if (ch == '\t' || (!rts && bch != 0)) {
-						rts ^= 1;
-						state = TIOCM_RTS;
-						if (!rts) {
-							write(tty, "\x04", 1);
-							ioctl(tty, TIOCDRAIN);
-							// Space still gets cut off... wait one char
-							usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
-						}
-						if (ioctl(tty, rts ? TIOCMBIS : TIOCMBIC, &state) != 0) {
-							printf_errno("%s RTS bit", rts ? "setting" : "resetting");
-							continue;
-						}
-						if (rts) {
-							figs = false;
-							write(tty, "\x08\x02", 2);
-						}
-						mark_tx_extent(rts);
-					}
-					if (bch == 0)
-						bch = 0x1f;	// Deedle...
-					if (bch) {
-						// Send FIGS/LTRS as needed
-						if ((!!(bch & 0x20)) != figs) {
-							figs = !!(bch & 0x20);
-							if (write(tty, &fstr[figs], 1) != 1)
-								printf_errno("error sending FIGS/LTRS");
-						}
-						switch (b2a[(int)bch]) {
-							case 0:
-							case 0x0e:
-							case 0x0f:
-								if (log_file != NULL)
-									fwrite(&b2a[(int)bch], 1, 1, log_file);
-								break;
-							case '\r':
-								if (write(tty, "\x02", 1) != 1)
-									printf_errno("error sending linefeed");
-							default:
-								write_tx(b2a[(int)bch]);
-								if (log_file != NULL)
-									fwrite(&b2a[(int)bch], 1, 1, log_file);
-								break;
-						}
-						if (b2a[(int)bch] == ' ')
-							figs = false;	// USOS
-						bch &= 0x1f;
-						if (write(tty, &bch, 1) != 1)
-							printf_errno("error sending char 0x%02x", bch);
-					}
-					break;
-			}
-			if (!rts) {
-				rx_mode = true;
-				reset_rx();
-				rxstate = -1;
-			}
+			if (!do_tx())
+				return;
+			rx_mode = true;
+			reset_rx();
+			rxstate = -1;
 		}
 		else {
 			if (check_input()) {
@@ -348,6 +305,153 @@ input_loop(void)
 			write_rx(ch);
 		}
 	}
+}
+
+static bool
+do_tx(void)
+{
+	int ch;
+	bool figs = false;
+
+	for (;;) {
+		ch = get_input();
+		switch (ch) {
+			case -1:
+				printf_errno("getting character");
+			case 3:
+				return false;
+			case RTTY_FKEY(1):
+				do_macro(1, &figs);
+				break;
+			case RTTY_FKEY(2):
+				do_macro(2, &figs);
+				break;
+			case RTTY_FKEY(3):
+				do_macro(3, &figs);
+				break;
+			case RTTY_FKEY(4):
+				do_macro(4, &figs);
+				break;
+			case RTTY_FKEY(5):
+				do_macro(5, &figs);
+				break;
+			case RTTY_FKEY(6):
+				do_macro(6, &figs);
+				break;
+			case RTTY_FKEY(7):
+				do_macro(7, &figs);
+				break;
+			case RTTY_FKEY(8):
+				do_macro(8, &figs);
+				break;
+			case RTTY_FKEY(9):
+				do_macro(9, &figs);
+				break;
+			case RTTY_FKEY(10):
+				do_macro(10, &figs);
+				break;
+			case '`':
+				toggle_reverse(&reverse);
+				break;
+			default:
+				send_char(ch, &figs);
+				break;
+		}
+		if (!get_rts()) {
+			return true;
+		}
+	}
+}
+
+static bool
+do_macro(int fkey, bool *figs)
+{
+	size_t len;
+	size_t i;
+	int m;
+
+	m = fkey - 1;
+	if (settings.macros[m] == NULL)
+		return true;
+	len = strlen(settings.macros[m]);
+	for (i = 0; i < len; i++) {
+		switch (settings.macros[m][i]) {
+			case '\t':
+				return false;
+		}
+		send_char(settings.macros[m][i], figs);
+	}
+	return true;
+}
+
+static void
+send_char(const char ch, bool *figs)
+{
+	const char fstr[] = "\x1f\x1b"; // LTRS, FIGS
+	char bch;
+	bool rts;
+	int state;
+
+	bch = asc2baudot(toupper(ch), *figs);
+	rts = get_rts();
+	if (ch == '\t' || (!rts && bch != 0)) {
+		rts ^= 1;
+		state = TIOCM_RTS;
+		if (!rts) {
+			write(tty, "\x04", 1);
+			ioctl(tty, TIOCDRAIN);
+			// Space still gets cut off... wait one char
+			usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
+		}
+		if (ioctl(tty, rts ? TIOCMBIS : TIOCMBIC, &state) != 0)
+			printf_errno("%s RTS bit", rts ? "setting" : "resetting");
+		if (rts) {
+			*figs = false;
+			write(tty, "\x08\x02", 2);
+		}
+		mark_tx_extent(rts);
+	}
+	if (bch == 0)
+		return;
+	if (bch) {
+		// Send FIGS/LTRS as needed
+		if ((!!(bch & 0x20)) != *figs) {
+			*figs = !!(bch & 0x20);
+			if (write(tty, &fstr[*figs], 1) != 1)
+				printf_errno("error sending FIGS/LTRS");
+		}
+		switch (b2a[(int)bch]) {
+			case 0:
+			case 0x0e:
+			case 0x0f:
+				if (log_file != NULL)
+					fwrite(&b2a[(int)bch], 1, 1, log_file);
+				break;
+			case '\r':
+				if (write(tty, "\x02", 1) != 1)
+					printf_errno("error sending linefeed");
+			default:
+				write_tx(b2a[(int)bch]);
+				if (log_file != NULL)
+					fwrite(&b2a[(int)bch], 1, 1, log_file);
+				break;
+		}
+		if (b2a[(int)bch] == ' ')
+			*figs = false;	// USOS
+		bch &= 0x1f;
+		if (write(tty, &bch, 1) != 1)
+			printf_errno("error sending char 0x%02x", bch);
+	}
+}
+
+static bool
+get_rts(void)
+{
+	int state;
+
+	if (ioctl(tty, TIOCMGET, &state) == -1)
+		printf_errno("getting RTS state");
+	return !!(state & TIOCM_RTS);
 }
 
 static void
@@ -405,6 +509,16 @@ usage(const char *cmd)
 	       "-r  DSP rate                     48000\n"
 	       "-q  Bandpass filter Q            10.0\n"
 	       "-Q  Envelope lowpass filter Q    0.5\n"
+	       "-1  F1 Macro                     <empty>\n"
+	       "-2  F2 Macro                     \"CQ CQ CQ CQ CQ CQ DE W8BSD W8BSD W8BSD PSE K\"\n"
+	       "-3  F3 Macro                     <empty>\n"
+	       "-4  F4 Macro                     <empty>\n"
+	       "-5  F5 Macro                     <empty>\n"
+	       "-6  F6 Macro                     <empty>\n"
+	       "-7  F7 Macro                     <empty>\n"
+	       "-8  F8 Macro                     <empty>\n"
+	       "-9  F9 Macro                     <empty>\n"
+	       "-0  F10 Macro                    <empty>\n"
 	       "\n", cmd);
 	exit(EXIT_FAILURE);
 }

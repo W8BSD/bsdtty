@@ -5,5 +5,6 @@ int get_rtty_ch(int state);
 void setup_rx(void);
 void setup_audio(void);
 void reset_rx(void);
+void toggle_reverse(bool *rev);
 
 #endif

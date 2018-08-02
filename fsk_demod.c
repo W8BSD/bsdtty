@@ -652,3 +652,24 @@ next(int val, int max)
 		val = 0;
 	return val;
 }
+
+void
+toggle_reverse(bool *rev)
+{
+	void *tmp;
+
+	*rev = !(*rev);
+	tmp = mfilt;
+	mfilt = sfilt;
+	sfilt = tmp;
+
+	tmp = mlpfilt;
+	mlpfilt = slpfilt;
+	slpfilt = tmp;
+
+	tmp = mapfilt;
+	mapfilt = sapfilt;
+	sapfilt = tmp;
+
+	show_reverse(*rev);
+}
