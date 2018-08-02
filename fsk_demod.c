@@ -25,6 +25,7 @@
  */
 
 //#define RX_OVERRUNS
+#define MATCHED_FILTERS
 
 #include <sys/soundcard.h>
 #include <sys/types.h>
@@ -42,6 +43,18 @@
 #include "bsdtty.h"
 #include "ui.h"
 
+struct fir_filter {
+	size_t		len;
+	int16_t		*buf;
+	double		*coef;
+	size_t		head;
+};
+
+struct bq_filter {
+	double		coef[5];
+	double		buf[4];
+};
+
 /* RX Stuff */
 #ifdef RX_OVERRUNS
 static int last_ro = -1;
@@ -49,21 +62,23 @@ static int last_ro = -1;
 static double phase_rate;
 static double phase = 0;
 // Mark filter
-static double mbpfilt[5];
-static double mlpfilt[5];
-static double mbpbuf[4];
-static double mlpbuf[4];
+#ifdef MATCHED_FILTERS
+static struct fir_filter *mfilt;
+#else
+static struct bq_filter *mfilt;
+#endif
+static struct bq_filter *mlpfilt;
 // Space filter
-static double sbpfilt[5];
-static double slpfilt[5];
-static double sbpbuf[4];
-static double slpbuf[4];
+#ifdef MATCHED_FILTERS
+static struct fir_filter *sfilt;
+#else
+static struct bq_filter *sfilt;
+#endif
+static struct bq_filter *slpfilt;
 // Mark phase filter
-static double mapfilt[5];
-static double mapbuf[4];
+static struct bq_filter *mapfilt;
 // Space phase filter
-static double sapfilt[5];
-static double sapbuf[4];
+static struct bq_filter *sapfilt;
 // Hunt for Start
 static double *hfs_buf = NULL;
 static size_t hfs_bufmax;
@@ -81,15 +96,15 @@ static int hfs_stop2;
 /* Audio variables */
 static int dsp = -1;
 static int dsp_channels = 1;
-static uint16_t *dsp_buf;
+static int16_t *dsp_buf;
 static int head=0, tail=0;	// Empty when equal
 static size_t dsp_bufmax;
 
 static int avail(int head, int tail, int max);
-static double bq_filter(double value, double *filt, double *buf);
-static void calc_apf_coef(double f0, double q, double *filt);
-static void calc_bpf_coef(double f0, double q, double *filt);
-static void calc_lpf_coef(double f0, double q, double *filt);
+static double bq_filter(double value, struct bq_filter *filter);
+static struct bq_filter * calc_apf_coef(double f0, double q);
+static struct bq_filter * calc_bpf_coef(double f0, double q);
+static struct bq_filter * calc_lpf_coef(double f0, double q);
 static void create_filters(void);
 static double current_value(void);
 static bool get_bit(void);
@@ -97,6 +112,8 @@ static bool get_stop_bit(void);
 static int next(int val, int max);
 static int prev(int val, int max);
 static void setup_audio(void);
+static struct fir_filter * create_matched_filter(double frequency);
+static double fir_filter(int16_t value, struct fir_filter *f);
 
 void
 setup_rx(void)
@@ -325,8 +342,8 @@ current_value(void)
 {
 	int ret;
 	int max;
-	uint16_t tmpbuf[1];
-	uint16_t *tb = tmpbuf;
+	int16_t tmpbuf[1];
+	int16_t *tb = tmpbuf;
 	double mv, emv, sv, esv, cv;
 	int i, j;
 	audio_errinfo errinfo;
@@ -389,11 +406,16 @@ current_value(void)
 
 	if (tail == head)
 		printf_errno("underrun %d == %d (%d)\n", tail, head, dsp_bufmax);
-	mv = bq_filter(dsp_buf[tail], mbpfilt, mbpbuf);
-	emv = bq_filter(mv*mv, mlpfilt, mlpbuf);
-	sv = bq_filter(dsp_buf[tail], sbpfilt, sbpbuf);
-	esv = bq_filter(sv*sv, slpfilt, slpbuf);
-	update_tuning_aid(bq_filter(mv, mapfilt, mapbuf), bq_filter(sv, sapfilt, sapbuf));
+#ifdef MATCHED_FILTERS
+	mv = fir_filter(dsp_buf[tail], mfilt);
+	sv = fir_filter(dsp_buf[tail], sfilt);
+#else
+	mv = bq_filter(dsp_buf[tail], mbpfilt);
+	sv = bq_filter(dsp_buf[tail], sbpfilt);
+#endif
+	emv = bq_filter(mv*mv, mlpfilt);
+	esv = bq_filter(sv*sv, slpfilt);
+	update_tuning_aid(mv, sv);
 	tail++;
 	if (tail > dsp_bufmax)
 		tail = 0;
@@ -408,20 +430,20 @@ current_value(void)
 static void
 create_filters(void)
 {
-	/* TODO: Look into "Matched Filters"... all the rage */
-	calc_bpf_coef(settings.mark_freq, settings.bp_filter_q, mbpfilt);
-	mbpbuf[0] = mbpbuf[1] = mbpbuf[2] = mbpbuf[3] = 0.0;
-	calc_bpf_coef(settings.space_freq, settings.bp_filter_q, sbpfilt);
-	sbpbuf[0] = sbpbuf[1] = sbpbuf[2] = sbpbuf[3] = 0.0;
+#ifndef MATCHED_FILTERS
+	mfilt = calc_bpf_coef(settings.mark_freq, settings.bp_filter_q);
+	sfilt = calc_bpf_coef(settings.space_freq, settings.bp_filter_q);
+#else
+	mfilt = create_matched_filter(settings.mark_freq);
+	sfilt = create_matched_filter(settings.space_freq);
+#endif
 
 	/*
 	 * TODO: Do we need to get the envelopes separately, or just
 	 * take the envelope of the differences?
 	 */
-	calc_lpf_coef(((double)settings.baud_numerator / settings.baud_denominator)*1.1, settings.lp_filter_q, mlpfilt);
-	mlpbuf[0] = mlpbuf[1] = mlpbuf[2] = mlpbuf[3] = 0.0;
-	calc_lpf_coef(((double)settings.baud_numerator / settings.baud_denominator)*1.1, settings.lp_filter_q, slpfilt);
-	slpbuf[0] = slpbuf[1] = slpbuf[2] = slpbuf[3] = 0.0;
+	mlpfilt = calc_lpf_coef(((double)settings.baud_numerator / settings.baud_denominator)*1.1, settings.lp_filter_q);
+	slpfilt = calc_lpf_coef(((double)settings.baud_numerator / settings.baud_denominator)*1.1, settings.lp_filter_q);
 
 	/*
 	 * These are here to fix the phasing for the crossed bananas
@@ -431,16 +453,19 @@ create_filters(void)
 	 * 
 	 * TODO: Figure out how to calculate phase in biquad IIR filters.
 	 */
-	calc_apf_coef(settings.mark_freq / 1.75, 1, mapfilt);
-	mapbuf[0] = mapbuf[1] = mapbuf[2] = mapbuf[3] = 0.0;
-	calc_apf_coef(settings.space_freq * 1.75, 1, sapfilt);
-	sapbuf[0] = sapbuf[1] = sapbuf[2] = sapbuf[3] = 0.0;
+	mapfilt = calc_apf_coef(settings.mark_freq / 1.75, 1);
+	sapfilt = calc_apf_coef(settings.space_freq * 1.75, 1);
 }
 
-static void
-calc_lpf_coef(double f0, double q, double *filt)
+static struct bq_filter *
+calc_lpf_coef(double f0, double q)
 {
+	struct bq_filter *ret;
 	double w0, cw0, sw0, a[5], b[5], alpha;
+
+	ret = malloc(sizeof(*ret));
+	if (ret == NULL)
+		printf_errno("allocating bpf");
 
 	w0 = 2.0 * M_PI * (f0 / settings.dsp_rate);
 	cw0 = cos(w0);
@@ -453,17 +478,28 @@ calc_lpf_coef(double f0, double q, double *filt)
 	a[0] = 1.0 + alpha;
 	a[1] = -2.0 * cw0;
 	a[2] = 1.0 - alpha;
-	filt[0] = b[0]/a[0];
-	filt[1] = b[1]/a[0];
-	filt[2] = b[2]/a[0];
-	filt[3] = a[1]/a[0];
-	filt[4] = a[2]/a[0];
+	ret->coef[0] = b[0]/a[0];
+	ret->coef[1] = b[1]/a[0];
+	ret->coef[2] = b[2]/a[0];
+	ret->coef[3] = a[1]/a[0];
+	ret->coef[4] = a[2]/a[0];
+	ret->buf[0] = 0;
+	ret->buf[1] = 0;
+	ret->buf[2] = 0;
+	ret->buf[3] = 0;
+
+	return ret;
 }
 
-static void
-calc_bpf_coef(double f0, double q, double *filt)
+static struct bq_filter *
+calc_bpf_coef(double f0, double q)
 {
+	struct bq_filter *ret;
 	double w0, cw0, sw0, a[5], b[5], alpha;
+
+	ret = malloc(sizeof(*ret));
+	if (ret == NULL)
+		printf_errno("allocating bpf");
 
 	w0 = 2.0 * M_PI * (f0 / settings.dsp_rate);
 	cw0 = cos(w0);
@@ -477,17 +513,28 @@ calc_bpf_coef(double f0, double q, double *filt)
 	a[0] = 1.0 + alpha;
 	a[1] = -2.0 * cw0;
 	a[2] = 1.0 - alpha;
-	filt[0] = b[0]/a[0];
-	filt[1] = b[1]/a[0];
-	filt[2] = b[2]/a[0];
-	filt[3] = a[1]/a[0];
-	filt[4] = a[2]/a[0];
+	ret->coef[0] = b[0]/a[0];
+	ret->coef[1] = b[1]/a[0];
+	ret->coef[2] = b[2]/a[0];
+	ret->coef[3] = a[1]/a[0];
+	ret->coef[4] = a[2]/a[0];
+	ret->buf[0] = 0;
+	ret->buf[1] = 0;
+	ret->buf[2] = 0;
+	ret->buf[3] = 0;
+
+	return ret;
 }
 
-static void
-calc_apf_coef(double f0, double q, double *filt)
+static struct bq_filter *
+calc_apf_coef(double f0, double q)
 {
+	struct bq_filter *ret;
 	double w0, cw0, sw0, a[5], b[5], alpha;
+
+	ret = malloc(sizeof(*ret));
+	if (ret == NULL)
+		printf_errno("allocating bpf");
 
 	w0 = 2.0 * M_PI * (f0 / settings.dsp_rate);
 	cw0 = cos(w0);
@@ -501,24 +548,83 @@ calc_apf_coef(double f0, double q, double *filt)
 	a[0] = 1.0 + alpha;
 	a[1] = -2.0 * cw0;
 	a[2] = 1.0 - alpha;
-	filt[0] = b[0]/a[0];
-	filt[1] = b[1]/a[0];
-	filt[2] = b[2]/a[0];
-	filt[3] = a[1]/a[0];
-	filt[4] = a[2]/a[0];
+	ret->coef[0] = b[0]/a[0];
+	ret->coef[1] = b[1]/a[0];
+	ret->coef[2] = b[2]/a[0];
+	ret->coef[3] = a[1]/a[0];
+	ret->coef[4] = a[2]/a[0];
+	ret->buf[0] = 0;
+	ret->buf[1] = 0;
+	ret->buf[2] = 0;
+	ret->buf[3] = 0;
+
+	return ret;
 }
 
 static double
-bq_filter(double value, double *filt, double *buf)
+bq_filter(double value, struct bq_filter *f)
 {
 	double y;
 
-	y = (filt[0] * value) + (filt[1] * buf[0]) + (filt[2] * buf[1]) - (filt[3] * buf[2]) - (filt[4] * buf[3]);
-	buf[1] = buf[0];
-	buf[0] = value;
-	buf[3] = buf[2];
-	buf[2] = y;
+	y = (f->coef[0] * value) +
+	    (f->coef[1] * f->buf[0]) + (f->coef[2] * f->buf[1]) -
+	    (f->coef[3] * f->buf[2]) - (f->coef[4] * f->buf[3]);
+	f->buf[1] = f->buf[0];
+	f->buf[0] = value;
+	f->buf[3] = f->buf[2];
+	f->buf[2] = y;
 	return y;
+}
+
+static double
+fir_filter(int16_t value, struct fir_filter *f)
+{
+	size_t end = f->head;
+	size_t i, j;
+	double res = 0;
+
+	f->buf[f->head] = value;
+	res = f->buf[f->head] * f->coef[0];
+	f->head = next(f->head, f->len - 1);
+
+	for (j = 1, i = f->head; i != end; j++, i = next(i, f->len - 1))
+		res += f->buf[i] * f->coef[j];
+
+	return res / f->len;
+}
+
+static struct fir_filter *
+create_matched_filter(double frequency)
+{
+	size_t i;
+	struct fir_filter *ret;
+	double wavelen;
+
+	ret = malloc(sizeof(*ret));
+	if (ret == NULL)
+		printf_errno("allocating FIR filter");
+	ret->head = 0;
+	/*
+	 * For the given sample rate, calculate the number of
+	 * samples in a complete wave
+	 */
+	ret->len = settings.dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator) / 2;
+	wavelen = settings.dsp_rate / frequency;
+
+	ret->buf = calloc(sizeof(*ret->buf) * ret->len, 1);
+	if (ret == NULL)
+		printf_errno("allocating FIR buffer");
+	ret->coef = malloc(sizeof(*ret->coef) * ret->len);
+	if (ret == NULL)
+		printf_errno("allocating FIR coef");
+
+	/*
+	 * Now create a sine wave with that many samples in coef
+	 */
+	for (i = 0; i < ret->len; i++)
+		ret->coef[ret->len - i - 1] = sin((double)i / wavelen * (2.0 * M_PI));
+
+	return ret;
 }
 
 static int

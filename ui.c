@@ -70,7 +70,7 @@ update_tuning_aid(double mark, double space)
 	static int nsamp = -1;
 	static double maxm = 0;
 	static double maxs = 0;
-	int mmult, smult;
+	double mmult, smult;
 	int madd, sadd;
 	int phaseadj = 0;
 	int y, x;
@@ -94,10 +94,10 @@ update_tuning_aid(double mark, double space)
 		if (wsamp >= phaseadj)
 			buf[(wsamp - phaseadj)*2+1] = space;
 	}
-	if (abs(mark) > maxm)
-		maxm = abs(mark);
-	if (abs(space) > maxs)
-		maxs = abs(space);
+	if (fabs(mark) > maxm)
+		maxm = fabs(mark);
+	if (fabs(space) > maxs)
+		maxs = fabs(space);
 	wsamp++;
 
 	if (wsamp - phaseadj == nsamp) {
@@ -106,6 +106,8 @@ update_tuning_aid(double mark, double space)
 		madd = tx_width / 2;
 		sadd = tx_height / 2;
 		werase(tx);
+		if (mmult == 0 || smult == 0)
+			return;
 		for (wsamp = 0; wsamp < nsamp; wsamp++) {
 			y = buf[wsamp*2+1] / smult + sadd;
 			x = buf[wsamp*2] / mmult + madd;
