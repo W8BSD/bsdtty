@@ -24,6 +24,8 @@
  *
  */
 
+//#define RX_OVERRUNS
+
 #include <sys/soundcard.h>
 #include <sys/types.h>
 
@@ -62,7 +64,7 @@ static double mapbuf[4];
 // Space phase filter
 static double sapfilt[5];
 static double sapbuf[4];
-// Hunt for Space
+// Hunt for Start
 static double *hfs_buf = NULL;
 static size_t hfs_bufmax;
 static int hfs_head;
@@ -104,7 +106,7 @@ setup_rx(void)
 	setup_audio();
 
 	phase_rate = 1/((double)settings.dsp_rate/((double)settings.baud_numerator / settings.baud_denominator));
-	hfs_buflen = ((double)settings.dsp_rate/((double)settings.baud_numerator / settings.baud_denominator)) * 7.5 + 1;
+	hfs_buflen = ((double)settings.dsp_rate/((double)settings.baud_numerator / settings.baud_denominator)) * 7.1 + 1;
 	hfs_buf = malloc(hfs_buflen*sizeof(double));
 	if (hfs_buf == NULL)
 		printf_errno("allocating dsp buffer");
@@ -153,14 +155,14 @@ get_rtty_ch(int state)
 		for (hfs_head = 0; hfs_head <= hfs_bufmax; hfs_head++)
 			hfs_buf[hfs_head] = current_value();
 		hfs_head = hfs_bufmax;
-		hfs_start = hfs_bufmax * 0.133333333333333333;
-		hfs_b0 = hfs_bufmax * 0.266666666666666666;
-		hfs_b1 = hfs_bufmax * 0.4;
-		hfs_b2 = hfs_bufmax * 0.533333333333333333;
-		hfs_b3 = hfs_bufmax * 0.666666666666666666;
-		hfs_b4 = hfs_bufmax * 0.8;
-		hfs_stop1 = hfs_bufmax * 0.866666666666666666;
-		hfs_stop2 = hfs_bufmax * 0.933333333333333333;
+		hfs_start = ((1/phase_rate)*.5);
+		hfs_b0 = ((1/phase_rate)*1.5);
+		hfs_b1 = ((1/phase_rate)*2.5);
+		hfs_b2 = ((1/phase_rate)*3.5);
+		hfs_b3 = ((1/phase_rate)*4.5);
+		hfs_b4 = ((1/phase_rate)*5.5);
+		hfs_stop1 = ((1/phase_rate)*6.5);
+		hfs_stop2 = hfs_bufmax;
 		return -2;
 	}
 	else {
@@ -168,7 +170,7 @@ get_rtty_ch(int state)
 		 * Now we're in HfS mode
 		 * First, check the existing buffer.
 		 */
-		if (hfs_buf[hfs_tail] < 0.0 && hfs_buf[prev(hfs_tail, hfs_bufmax)] >= 0.0) {
+		if (hfs_buf[hfs_tail] >= 0.0 && hfs_buf[next(hfs_tail, hfs_bufmax)] < 0.0) {
 			/* If there's a valid character in there, return it. */
 			if (hfs_buf[hfs_start] < 0.0 &&
 			    hfs_buf[hfs_stop1] >= 0.0 &&
@@ -200,7 +202,7 @@ get_rtty_ch(int state)
 	 * Now we get the start bit... this is how we synchronize,
 	 * so reset the phase here.
 	 */
-	phase = 0;
+	phase = phase_rate;
 	b = get_bit();
 	if (b)
 		return -1;
@@ -293,21 +295,25 @@ get_bit(void)
 static bool
 get_stop_bit(void)
 {
-	int i;
-	int need = ((double)settings.dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator)) * 0.9;
-	int rst = 0;
+	int nsamp;
 	double cv;
+	bool ret = 0;
 
-	for (i = 0; i < need; i++) {
-		if ((cv = current_value()) < 0.0) {
-			i = 0;
-			rst++;
-			if (rst > need*2)
-				return false;
-			continue;
+	for (nsamp = 0; phase < 1.42; phase += phase_rate) {
+		cv = current_value();
+		if (phase > 0.5 && nsamp == 0) {
+			ret = cv >= 0.0;
+			nsamp++;
 		}
+		else if (phase > 1 && nsamp == 1) {
+			if (cv < 0.0)
+				ret = false;
+			nsamp++;
+		}
+		if (phase > 1.39 && ret && cv < 0.0)
+			return ret;
 	}
-	return true;
+	return ret;
 }
 
 /*
@@ -373,7 +379,7 @@ current_value(void)
 		ret = ioctl(dsp, SNDCTL_DSP_GETERROR, &errinfo);
 		if (ret == -1)
 			printf_errno("reading audio errors");
-#if RX_OVERRUNS
+#ifdef RX_OVERRUNS
 		// TODO: Figure out how to get this back in.
 		if (last_ro != -1 && errinfo.rec_overruns)
 			printf_errno("rec_overrun (%d)", errinfo.rec_overruns);

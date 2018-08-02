@@ -57,7 +57,7 @@ struct bt_settings settings = {
 	.dsp_rate = 48000,
 	.log_name = "bsdtty.log",
 	.bp_filter_q = 10,
-	.lp_filter_q = 1,
+	.lp_filter_q = 0.5,
 	.mark_freq = 2125,
 	.space_freq = 2295,
 	.tty_name = "/dev/ttyu9",
@@ -274,7 +274,7 @@ input_loop(void)
 						}
 						if (rts) {
 							figs = false;
-							write(tty, "\x1f\x1f\x1f\x08\x02", 5);
+							write(tty, "\x08\x02", 2);
 						}
 						mark_tx_extent(rts);
 					}
@@ -397,14 +397,14 @@ usage(const char *cmd)
 	       "ARG Description                  Default\n"
 	       "-t  TTY device name              /dev/ttyu9\n"
 	       "-p  DSP device name              /dev/dsp8\n"
-	       "-m  Mark audio frequency         2125\n"
-	       "-s  Space audio frequency        2295\n"
+	       "-m  Mark audio frequency         2125.0\n"
+	       "-s  Space audio frequency        2295.0\n"
 	       "-n  Baudrate Numerator           1000\n"
 	       "-d  Baudrate Denominator         22\n"
 	       "-l  Logfile name                 bsdtty.log\n"
 	       "-r  DSP rate                     48000\n"
-	       "-q  Bandpass filter Q            10\n"
-	       "-Q  Envelope lowpass filter Q    1\n"
+	       "-q  Bandpass filter Q            10.0\n"
+	       "-Q  Envelope lowpass filter Q    0.5\n"
 	       "\n", cmd);
 	exit(EXIT_FAILURE);
 }
