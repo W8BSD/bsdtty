@@ -246,7 +246,7 @@ setup_log(void)
 		printf_errno("opening log file");
 	now = time(NULL);
 	if (log_file != NULL)
-		fprintf(log_file, "\r\n\r\n%s\r\n", ctime(&now));
+		fprintf(log_file, "\n\n%s\n", ctime(&now));
 }
 
 /*
@@ -472,6 +472,7 @@ send_char(const char ch, bool *figs)
 	bool rts;
 	int state;
 	char ach;
+	time_t now;
 
 	bch = asc2baudot(ch, *figs);
 	rts = get_rts();
@@ -496,6 +497,9 @@ send_char(const char ch, bool *figs)
 			 */
 			write(tty, "\x1b\x08\x02", 2);
 		}
+		now = time(NULL);
+		if (log_file != NULL)
+			fprintf(log_file, "\n------- %s of transmission (%.24s) -------\n", rts ? "Start" : "End", ctime(&now));
 		mark_tx_extent(rts);
 	}
 	if (bch == 0)
