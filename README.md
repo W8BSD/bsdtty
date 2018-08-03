@@ -14,8 +14,9 @@ This currently expects that you add the following line to your /etc/rc.local
 file after installing the patched OS: `/bin/stty -f /dev/ttyu9 -rtsctr`
 
 Controls:
-| Keystroke | Action |
-|-----------|-------------------------------------------------------|
+
+| Keystroke | Action                                                |
+| --------- | ----------------------------------------------------- |
 | TAB       | Toggles TX                                            |
 | `         | Toggles Reverse RX                                    |
 | [         | Previous character set                                |
