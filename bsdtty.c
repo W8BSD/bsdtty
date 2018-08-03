@@ -439,14 +439,24 @@ send_char(const char ch, bool *figs)
 		}
 		switch (b2a[(int)bch]) {
 			case 0:
+				if (log_file != NULL)
+					fwrite(&b2a[(int)bch], 1, 1, log_file);
+				break;
 			case 0x0e:
+				*figs = false;
+				if (log_file != NULL)
+					fwrite(&b2a[(int)bch], 1, 1, log_file);
+				break;
 			case 0x0f:
+				*figs = true;
 				if (log_file != NULL)
 					fwrite(&b2a[(int)bch], 1, 1, log_file);
 				break;
 			case '\r':
-				if (write(tty, "\x02", 1) != 1)
-					printf_errno("error sending linefeed");
+				write_tx('\r');
+				if (log_file != NULL)
+					fwrite("\r\n", 2, 1, log_file);
+				break;
 			default:
 				write_tx(b2a[(int)bch]);
 				if (log_file != NULL)
@@ -458,6 +468,11 @@ send_char(const char ch, bool *figs)
 		bch &= 0x1f;
 		if (write(tty, &bch, 1) != 1)
 			printf_errno("error sending char 0x%02x", bch);
+		if (bch == 0x08) {
+			bch = 0x02;
+			if (write(tty, &bch, 1) != 1)
+				printf_errno("error sending char 0x%02x", bch);
+		}
 	}
 }
 

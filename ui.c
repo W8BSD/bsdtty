@@ -217,7 +217,26 @@ write_tx(char ch)
 void
 write_rx(char ch)
 {
-	waddch(rx, ch);
+	int y, x;
+	int my, mx;
+
+	getyx(rx, y, x);
+	getmaxyx(rx, my, mx);
+	switch (ch) {
+		case '\r':
+			wmove(rx, y, 0);
+			break;
+		case '\n':
+			if (y == my)
+				scroll(rx);
+			else
+				y++;
+			wmove(rx, y, x);
+			break;
+		default:
+			waddch(rx, ch);
+			break;
+	}
 	wrefresh(rx);
 }
 
