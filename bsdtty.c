@@ -258,7 +258,9 @@ setup_tty(void)
 {
 	struct termios t;
 	int state = TIOCM_DTR | TIOCM_RTS;
+#ifdef TIOCSFBAUD
 	struct baud_fraction bf;
+#endif
 
 	// Set up the UART
 	tty = open(settings.tty_name, O_RDWR|O_DIRECT|O_NONBLOCK);
