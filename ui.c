@@ -233,6 +233,12 @@ write_rx(char ch)
 				y++;
 			wmove(rx, y, x);
 			break;
+		case 7:
+			beep();
+			break;
+		case 5:
+			// Ignore Who Are You?
+			break;
 		default:
 			waddch(rx, ch);
 			break;
@@ -506,6 +512,12 @@ struct field_info {
 		.key = "f10",
 		.type = STYPE_BAUDOT,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 9
+	},
+	{
+		.name = "Character set",
+		.key = "charset",
+		.type = STYPE_INT,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, charset)
 	},
 };
 #define NUM_FIELDS (sizeof(fields) / sizeof(fields[0]))
@@ -802,4 +814,14 @@ find_field(const char *key)
 	}
 
 	return -1;
+}
+
+void
+display_charset(const char *name)
+{
+	char padded[12];
+
+	snprintf(padded, sizeof(padded), "%-11s", name);
+	mvwaddstr(status, 0, 6, padded);
+	wrefresh(status);
 }

@@ -11,6 +11,14 @@ There's also an ASCII "crossed bananas" tuning aid.
 This currently expects that you add the following line to your /etc/rc.local
 file after installing the patched OS: `/bin/stty -f /dev/ttyu9 -rtsctr`
 
+Controls:
+TAB       Toggles TX
+`         Toggles Reverse RX
+[         Previous character set
+]         Next character set
+Backspace Configuration editor (ENTER to save, CTRL-C to abort)
+CTRL-C    Exit
+
 Outstanding issues:
 * There are at least two different 5-bit codesets... likely more since linpsk uses '=' instead of ';'
 * I'm not sure that USOS is handled correctly.

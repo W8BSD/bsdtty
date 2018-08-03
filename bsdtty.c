@@ -62,6 +62,7 @@ struct bt_settings settings = {
 	.lp_filter_q = 0.5,
 	.mark_freq = 2125,
 	.space_freq = 2295,
+	.charset = 0
 };
 
 /* UART Stuff */
@@ -73,29 +74,65 @@ static bool reverse = false;
 /* Log thing */
 static FILE *log_file;
 
-static const char b2a[] = "\x00" "E\nA SIU"
+struct charset {
+	const char *chars;
+	const char *name;
+};
+
+struct charset charsets[] = {
+	{
+		// From http://baudot.net/docs/smith--teletype-codes.pdf
+		.name = "ITA2",
+		.chars = "\x00" "E\nA SIU"
+		  "\rDRJNFCK"
+		  "TZLWHYPQ"
+		  "OBG\x0e" "MXV\x0f"
+		  "\x00" "3\n- '87"
+		  "\r#4\x07" ",@:("
+		  "5+)2$601"
+		  "9?*\x0e" "./=\x0f"
+	},
+	{
+		// From http://baudot.net/docs/smith--teletype-codes.pdf
+		.name = "USTTY",
+		.chars = "\x00" "E\nA SIU"
 		  "\rDRJNFCK"
 		  "TZLWHYPQ"
 		  "OBG\x0e" "MXV\x0f"
 		  "\x00" "3\n- \x07" "87"
 		  "\r$4',!:("
 		  "5\")2#601"
-		  "9?&\x0e" "./;\x0f";
-
-static const char us2a[] = "\x00" "E\nA SIU"
+		  "9?&\x0e" "./;\x0f"
+	},
+	{
+		// From ITU-T S.1 (official standard)
+		/*
+		 * WRU signal (who are you?) FIGS D is to operate answerback...
+		 * It is therefore encoded as ENQ. (4.1)
+		 * 
+		 * FIGS F, G, and H are explicitly NOT DEFINED. 
+		 * "arbitrary sign" such as a square to indicate an
+		 * abnormal impression should occur. (4.2)
+		 * 
+		 * See U.11, U.20, U.22 and S.4 for NUL uses
+		 */
+		.name = "ITA2-Strict",
+		.chars = "\x00" "E\nA SIU"
 		  "\rDRJNFCK"
 		  "TZLWHYPQ"
 		  "OBG\x0e" "MXV\x0f"
-		  "\x00" "3\n- '" "87"
-		  "\r$4\x07,!:("
-		  "5\")2#601"
-		  "9?&\x0e" "./;\x0f";
+		  "\x00" "3\n '87"
+		  "\r\x05" "4\x07,\x00" ":("
+		  "5+)2\x00" "601"
+		  "9?\x00" "\x0e" "./=\x0f"
+	  },
+};
 
 int main(int argc, char **argv)
 {
 	int ch;
 
-	while ((ch = getopt(argc, argv, "d:l:m:n:p:q:Q:r:s:t:1:2:3:4:5:6:7:8:9:0:")) != -1) {
+	while ((ch = getopt(argc, argv, "c:d:l:m:n:p:q:Q:r:s:t:1:2:3:4:5:6:7:8:9:0:")) != -1) {
 		while (optarg && isspace(*optarg))
 			optarg++;
 		switch (ch) {
@@ -143,6 +180,11 @@ int main(int argc, char **argv)
 			case '0':
 				settings.macros[9] = strdup(optarg);
 				break;
+			case 'c':
+				settings.charset = strtoi(optarg, NULL, 10);
+				if (settings.charset < 0 || settings.charset >= sizeof(charsets) / sizeof(charsets[0]))
+					settings.charset = 0;
+				break;
 			default:
 				usage(argv[0]);
 		}
@@ -165,6 +207,8 @@ int main(int argc, char **argv)
 	// Set up the log file
 	setup_log();
 
+	display_charset(charsets[settings.charset].name);
+
 	// Finally, do the thing.
 	input_loop();
 	return EXIT_SUCCESS;
@@ -186,6 +230,8 @@ setup_defaults(void)
 		settings.dsp_name = strdup("/dev/dsp8");
 	if (settings.macros[1] == NULL)
 		settings.macros[1] = strdup("CQ CQ CQ CQ CQ CQ DE W8BSD W8BSD W8BSD PSE K\t");
+	if (settings.macros[2] == NULL)
+		settings.macros[1] = strdup("W8BSD ");
 }
 
 static void
@@ -265,14 +311,19 @@ asc2baudot(int asc, bool figs)
 
 	asc = toupper(asc);
 	if (figs)
-		ch = memchr(b2a + 0x20, asc, 0x20);
+		ch = memchr(charsets[settings.charset].chars + 0x20, asc, 0x20);
 	if (ch == NULL)
-		ch = memchr(b2a, asc, 0x40);
-	if (ch == NULL)
-		ch = memchr(us2a, asc, 0x40);
+		ch = memchr(charsets[settings.charset].chars, asc, 0x40);
 	if (ch == NULL)
 		return 0;
-	return ch - b2a;
+	return ch - charsets[settings.charset].chars;
+}
+
+char baudot2asc(int baudot, bool figs)
+{
+	if (baudot < 0 || baudot > 0x1f)
+		return 0;
+	return charsets[settings.charset].chars[baudot + figs * 0x20];
 }
 
 static void
@@ -302,7 +353,7 @@ input_loop(void)
 				continue;
 			if (rxstate > 0x20)
 				printf_errno("got a==%d", rxstate);
-			ch = b2a[rxstate+(0x20*rxfigs)];
+			ch = baudot2asc(rxstate, rxfigs);
 			if (log_file != NULL)
 				fwrite(&ch, 1, 1, log_file);
 			switch(ch) {
@@ -370,6 +421,18 @@ do_tx(void)
 			case '`':
 				toggle_reverse(&reverse);
 				break;
+			case '[':
+				settings.charset--;
+				if (settings.charset < 0)
+					settings.charset = sizeof(charsets) / sizeof(charsets[0]) - 1;
+				display_charset(charsets[settings.charset].name);
+				break;
+			case ']':
+				settings.charset++;
+				if (settings.charset == sizeof(charsets) / sizeof(charsets[0]))
+					settings.charset = 0;
+				display_charset(charsets[settings.charset].name);
+				break;
 			case 0x7f:
 			case 0x08:
 				if (!get_rts())
@@ -408,6 +471,7 @@ send_char(const char ch, bool *figs)
 	char bch;
 	bool rts;
 	int state;
+	char ach;
 
 	bch = asc2baudot(ch, *figs);
 	rts = get_rts();
@@ -424,7 +488,13 @@ send_char(const char ch, bool *figs)
 			printf_errno("%s RTS bit", rts ? "setting" : "resetting");
 		if (rts) {
 			*figs = false;
-			write(tty, "\x08\x02", 2);
+			/*
+			 * Per ITU-T S.1, the FIRST symbol should be a
+			 * shift... since it's most likely to be lost,
+			 * a LTRS is the safest, since a FIGS will get
+			 * repeated after the CRLF.
+			 */
+			write(tty, "\x1b\x08\x02", 2);
 		}
 		mark_tx_extent(rts);
 	}
@@ -437,20 +507,22 @@ send_char(const char ch, bool *figs)
 			if (write(tty, &fstr[*figs], 1) != 1)
 				printf_errno("error sending FIGS/LTRS");
 		}
-		switch (b2a[(int)bch]) {
+		/* We do this to ensure it's valid baudot */
+		ach = baudot2asc(bch & 0x1f, bch & 0x20);
+		switch (ach) {
 			case 0:
 				if (log_file != NULL)
-					fwrite(&b2a[(int)bch], 1, 1, log_file);
+					fwrite(&ach, 1, 1, log_file);
 				break;
 			case 0x0e:
 				*figs = false;
 				if (log_file != NULL)
-					fwrite(&b2a[(int)bch], 1, 1, log_file);
+					fwrite(&ach, 1, 1, log_file);
 				break;
 			case 0x0f:
 				*figs = true;
 				if (log_file != NULL)
-					fwrite(&b2a[(int)bch], 1, 1, log_file);
+					fwrite(&ach, 1, 1, log_file);
 				break;
 			case '\r':
 				write_tx('\r');
@@ -458,12 +530,12 @@ send_char(const char ch, bool *figs)
 					fwrite("\r\n", 2, 1, log_file);
 				break;
 			default:
-				write_tx(b2a[(int)bch]);
+				write_tx(ach);
 				if (log_file != NULL)
-					fwrite(&b2a[(int)bch], 1, 1, log_file);
+					fwrite(&ach, 1, 1, log_file);
 				break;
 		}
-		if (b2a[(int)bch] == ' ')
+		if (ach == ' ')
 			*figs = false;	// USOS
 		bch &= 0x1f;
 		if (write(tty, &bch, 1) != 1)
@@ -551,6 +623,7 @@ usage(const char *cmd)
 	       "-8  F8 Macro                     <empty>\n"
 	       "-9  F9 Macro                     <empty>\n"
 	       "-0  F10 Macro                    <empty>\n"
+	       "-c  Charset to use               0\n"
 	       "\n", cmd);
 	exit(EXIT_FAILURE);
 }
