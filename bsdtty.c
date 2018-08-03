@@ -319,7 +319,8 @@ asc2baudot(int asc, bool figs)
 	return ch - charsets[settings.charset].chars;
 }
 
-char baudot2asc(int baudot, bool figs)
+char
+baudot2asc(int baudot, bool figs)
 {
 	if (baudot < 0 || baudot > 0x1f)
 		return 0;

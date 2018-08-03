@@ -19,9 +19,12 @@ TAB       Toggles TX
 Backspace Configuration editor (ENTER to save, CTRL-C to abort)
 CTRL-C    Exit
 
+Clicking in the RX window will toggle the FIGS shift.  While clicking again will
+reverse it again, the extents are whitespace and shift changes, as a result,
+clicking in a "word" which contains both FIGS and LTRS is irreversable.
+
 Outstanding issues:
 * I should idle with LTRS, not a mark signal... super tricky.
-* You should be able to switch the shift by moving the mouse over it.
 * Perhaps support autodetecting reverse mode?
 * Really needs a manpage.
 * You shouldn't need to exit and restart the program to load setting changes.

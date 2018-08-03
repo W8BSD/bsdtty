@@ -57,8 +57,10 @@ static bool baudot_char(int ch, const void *ab);
 static void do_endwin(void);
 static char *escape_config(char *str);
 static int find_field(const char *key);
+static bool get_figs(chtype ch);
 static void setup_windows(void);
 static char *strip_spaces(char *str);
+static void toggle_figs(int y, int x);
 static void w_printf(WINDOW *win, const char *format, ...);
 static char *unescape_config(char *str);
 
@@ -78,6 +80,20 @@ setup_curses(void)
 	curs_set(0);
 
 	setup_windows();
+	/*
+	 * We need to fire on BUTTON1_PRESSED, not BUTTON1_CLICKED...
+	 * curses will block in wgetch() while the button is down
+	 * when using BUTTON1_CLICKED.  If we don't unmask
+	 * BUTTON1_RELEASED along with BUTTON1_PRESSED, wgetch() will
+	 * block indefinately after a clock(!)  We simply ignore the
+	 * release event though.
+	 */
+	mousemask(BUTTON1_PRESSED | BUTTON1_RELEASED, NULL);
+	/*
+	 * If we don't set mouseinterval to zero, we end up with delays
+	 * in wgetch() as well.
+	 */
+	mouseinterval(0);
 }
 
 void
@@ -172,6 +188,7 @@ int
 get_input(void)
 {
 	int ret;
+	MEVENT ev;
 
 	ret = wgetch(tx);
 	switch(ret) {
@@ -201,14 +218,14 @@ get_input(void)
 			return RTTY_FKEY(10);
 		case KEY_BACKSPACE:
 			return 8;
+		case KEY_MOUSE:
+			getmouse(&ev);
+			if (ev.bstate & BUTTON1_PRESSED)
+				toggle_figs(ev.y, ev.x);
+			return 0;
 		default:
 			return ret;
 	}
-	if (ret == ERR)		// Map ERR to -1
-		return -1;
-	if (ret == KEY_BREAK)	// Map KEY_BREAK to ^C
-		return 3;
-	return ret;
 }
 
 void
@@ -255,9 +272,16 @@ write_rx(char ch)
 bool
 check_input(void)
 {
+	MEVENT ev;
 	int ch;
 
 	ch = wgetch(rx);
+	if (ch == KEY_MOUSE) {
+		getmouse(&ev);
+		if (ev.bstate & BUTTON1_PRESSED)
+			toggle_figs(ev.y, ev.x);
+		return check_input();	// TODO: Recusion!  Mah stack!
+	}
 	if (ch != ERR) {
 		ungetch(ch);
 		return true;
@@ -704,7 +728,7 @@ strip_spaces(char *str)
 {
 	char *ch;
 
-	for (ch = strchr(str, 0) - 1; *ch == ' ' && ch >= str; ch--)
+	for (ch = strchr(str, 0) - 1; ch >= str && *ch == ' '; ch--)
 		*ch = 0;
 	return str;
 }
@@ -737,7 +761,7 @@ unescape_config(char *str)
 	char *ch;
 
 	strip_spaces(str);
-	for (ch = strchr(str, 0) - 1; *ch == ' ' && ch >= str; ch--)
+	for (ch = strchr(str, 0) - 1; ch >= str && *ch == ' '; ch--)
 		*ch = 0;
 
 	for (ch = str; *ch; ch++) {
@@ -854,4 +878,87 @@ audio_meter(int16_t envelope)
 	wcolor_set(status, 0, NULL);
 	wattroff(status, A_BOLD);
 	wrefresh(status);
+}
+
+static bool
+get_figs(chtype ch)
+{
+	char bch;
+
+	bch = asc2baudot(ch & A_CHARTEXT, false);
+	return bch & 0x20;
+}
+
+static bool
+can_print_inverse(chtype ch)
+{
+	bool figs;
+	char bch, ach;
+
+	ch &= A_CHARTEXT;
+	if (ch == 0)
+		return false;
+	bch = asc2baudot(ch, false);
+	if (bch == 0)
+		return false;
+	figs = bch & 0x20;
+	bch &= 0x1f;
+	ach = baudot2asc(bch, !figs);
+	return isprint(ach);
+}
+
+static void
+toggle_figs(int y, int x)
+{
+	int sx, sy;
+	int width, height;
+	bool figs = false;
+	int fx, fy;
+	chtype ch;
+	char bch;
+	char ach;
+	int iy, ix;
+
+	getyx(rx, iy, ix);
+	getbegyx(rx, sy, sx);
+	getmaxyx(rx, height, width);
+
+	if (y < sx || x < sx || y >= sy + height || x >= sx + width)
+		return;
+	/* From x/y, move left until the edge, whitespace, or figs changes */
+	fy = y - sy;
+	ch = mvwinch(rx, fy , x - sx);
+	figs = get_figs(ch);
+	for (fx = x - sx; fx >= 0; fx--) {
+		ch = mvwinch(rx, fy , fx);
+		ch &= A_CHARTEXT;
+		if (ch == 0 || isspace(ch) || get_figs(ch) != figs || !can_print_inverse(ch)) {
+			if (fx < x - sx)
+				fx++;
+			break;
+		}
+	}
+	if (fx == -1)
+		fx = 0;
+	/* Now, from fy/fx move left toggling shift until more space */
+	for (; fx < width; fx++) {
+		ch = mvwinch(rx, fy , fx);
+		if (get_figs(ch) != figs)
+			break;
+		if (!can_print_inverse(ch))
+			break;
+		ch &= A_CHARTEXT;
+		if (ch == 0 || isspace(ch))
+			break;
+		bch = asc2baudot(ch, figs);
+		if (bch == 0)
+			break;
+		bch &= 0x1f;
+		ach = baudot2asc(bch, !figs);
+		if (!isprint(ach))
+			break;
+		mvwaddch(rx, fy, fx, ach);
+	}
+	wmove(rx, iy, ix);
+	wrefresh(rx);
 }
