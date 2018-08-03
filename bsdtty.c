@@ -396,13 +396,8 @@ do_macro(int fkey, bool *figs)
 	if (settings.macros[m] == NULL)
 		return true;
 	len = strlen(settings.macros[m]);
-	for (i = 0; i < len; i++) {
-		switch (settings.macros[m][i]) {
-			case '\t':
-				return false;
-		}
+	for (i = 0; i < len; i++)
 		send_char(settings.macros[m][i], figs);
-	}
 	return true;
 }
 

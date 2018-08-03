@@ -18,4 +18,5 @@ Outstanding issues:
 * You should be able to switch the shift by moving the mouse over it.
 * Perhaps support autodetecting reverse mode?
 * Really needs a manpage.
-* You shouldn't need to exit and restart the program to load setting changes
+* You shouldn't need to exit and restart the program to load setting changes.
+* A Vu meter for setting RF gain would be nice.
