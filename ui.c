@@ -259,7 +259,7 @@ write_rx(char ch)
 			wmove(rx, y, 0);
 			break;
 		case '\n':
-			if (y == my)
+			if (y == my - 1)
 				scroll(rx);
 			else
 				y++;
