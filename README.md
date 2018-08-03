@@ -14,14 +14,16 @@ This currently expects that you add the following line to your /etc/rc.local
 file after installing the patched OS: `/bin/stty -f /dev/ttyu9 -rtsctr`
 
 Controls:
-TAB       Toggles TX
-`         Toggles Reverse RX
-[         Previous character set
-]         Next character set
-Backspace Configuration editor (ENTER to save, CTRL-C to abort)
-\         Rescales the tuning aid display
-CTRL-C    Exit
-CTRL-L    Clear RX window
+| Keystroke | Action |
+|-----------|-------------------------------------------------------|
+| TAB       | Toggles TX                                            |
+| `         | Toggles Reverse RX                                    |
+| [         | Previous character set                                |
+| ]         | Next character set                                    |
+| Backspace | Configuration editor (ENTER to save, CTRL-C to abort) |
+| \         | Rescales the tuning aid display                       |
+| CTRL-C    | Exit                                                  |
+| CTRL-L    | Clear RX window                                       |
 
 Clicking in the RX window will toggle the FIGS shift.  While clicking again will
 reverse it again, the extents are whitespace and shift changes, as a result,
