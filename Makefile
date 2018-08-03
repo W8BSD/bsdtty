@@ -1,5 +1,5 @@
 CFLAGS	+=	-Wall -g -O0
-LDLIBS	+=	-lcurses -lm
+LDLIBS	+=	-lform -lcurses -lm
 
 OBJS = bsdtty.o fsk_demod.o ui.o
 

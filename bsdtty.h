@@ -17,4 +17,7 @@ struct bt_settings {
 
 extern struct bt_settings settings;
 
+char asc2baudot(int asc, bool figs);
+int strtoi(const char *, char **endptr, int base);
+
 #endif

@@ -43,7 +43,6 @@
 #include "fsk_demod.h"
 #include "ui.h"
 
-static char asc2baudot(int asc, bool figs);
 static bool do_macro(int fkey, bool *figs);
 static bool do_tx(void);
 static void done(void);
@@ -52,21 +51,17 @@ static void input_loop(void);
 static void send_char(const char ch, bool *figs);
 static void setup_log(void);
 static void setup_tty(void);
-static int strtoi(const char *, char **endptr, int base);
 static void usage(const char *cmd);
+static void setup_defaults(void);
 
 struct bt_settings settings = {
 	.baud_numerator = 1000,
 	.baud_denominator = 22,
 	.dsp_rate = 48000,
-	.log_name = "bsdtty.log",
 	.bp_filter_q = 10,
 	.lp_filter_q = 0.5,
 	.mark_freq = 2125,
 	.space_freq = 2295,
-	.tty_name = "/dev/ttyu9",
-	.dsp_name = "/dev/dsp8",
-	.macros = {NULL, "CQ CQ CQ CQ CQ CQ DE W8BSD W8BSD W8BSD PSE K"}
 };
 
 /* UART Stuff */
@@ -153,6 +148,9 @@ int main(int argc, char **argv)
 		}
 	}
 
+	setup_defaults();
+	load_config();
+
 	setup_tty();
 
 	setlocale(LC_ALL, "");
@@ -170,6 +168,24 @@ int main(int argc, char **argv)
 	// Finally, do the thing.
 	input_loop();
 	return EXIT_SUCCESS;
+}
+
+static void
+setup_defaults(void)
+{
+	/*
+	 * We do this here so NULL means uninitialized and we can always
+	 * free() strings.
+	 */
+
+	if (settings.log_name == NULL)
+		settings.log_name = strdup("bsdtty.log");
+	if (settings.tty_name == NULL)
+		settings.tty_name = strdup("/dev/ttyu9");
+	if (settings.dsp_name == NULL)
+		settings.dsp_name = strdup("/dev/dsp8");
+	if (settings.macros[1] == NULL)
+		settings.macros[1] = strdup("CQ CQ CQ CQ CQ CQ DE W8BSD W8BSD W8BSD PSE K\t");
 }
 
 static void
@@ -208,7 +224,7 @@ setup_tty(void)
 	 * CTS hopefully before anyone notices
 	 */
 	if (ioctl(tty, TIOCMBIC, &state) != 0)
-		printf_errno("unable clear RTS/DTR");
+		printf_errno("unable clear RTS/DTR on '%s'", settings.tty_name);
 
 	if (tcgetattr(tty, &t) == -1)
 		printf_errno("unable to read term caps");
@@ -242,11 +258,12 @@ setup_tty(void)
 	ioctl(tty, TIOCGFBAUD, &bf);
 }
 
-static char
+char
 asc2baudot(int asc, bool figs)
 {
 	char *ch = NULL;
 
+	asc = toupper(asc);
 	if (figs)
 		ch = memchr(b2a + 0x20, asc, 0x20);
 	if (ch == NULL)
@@ -353,6 +370,11 @@ do_tx(void)
 			case '`':
 				toggle_reverse(&reverse);
 				break;
+			case 0x7f:
+			case 0x08:
+				if (!get_rts())
+					change_settings();
+				break;
 			default:
 				send_char(ch, &figs);
 				break;
@@ -392,7 +414,7 @@ send_char(const char ch, bool *figs)
 	bool rts;
 	int state;
 
-	bch = asc2baudot(toupper(ch), *figs);
+	bch = asc2baudot(ch, *figs);
 	rts = get_rts();
 	if (ch == '\t' || (!rts && bch != 0)) {
 		rts ^= 1;
@@ -466,7 +488,7 @@ done(void)
 	}
 }
 
-static int
+int
 strtoi(const char *nptr, char **endptr, int base)
 {
 	int ret;
