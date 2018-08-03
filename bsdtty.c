@@ -298,10 +298,12 @@ setup_tty(void)
 
 	if (ioctl(tty, TIOCMBIC, &state) != 0)
 		printf_errno("unable clear RTS/DTR");
+#ifdef TIOCSFBAUD
 	bf.bf_numerator = settings.baud_numerator;
 	bf.bf_denominator = settings.baud_denominator;
 	ioctl(tty, TIOCSFBAUD, &bf);
 	ioctl(tty, TIOCGFBAUD, &bf);
+#endif
 }
 
 char
