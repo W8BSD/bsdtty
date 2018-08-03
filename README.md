@@ -20,11 +20,8 @@ Backspace Configuration editor (ENTER to save, CTRL-C to abort)
 CTRL-C    Exit
 
 Outstanding issues:
-* There are at least two different 5-bit codesets... likely more since linpsk uses '=' instead of ';'
-* I'm not sure that USOS is handled correctly.
 * I should idle with LTRS, not a mark signal... super tricky.
 * You should be able to switch the shift by moving the mouse over it.
 * Perhaps support autodetecting reverse mode?
 * Really needs a manpage.
 * You shouldn't need to exit and restart the program to load setting changes.
-* A Vu meter for setting RF gain would be nice.
