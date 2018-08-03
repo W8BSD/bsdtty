@@ -21,10 +21,13 @@ TAB       Toggles TX
 Backspace Configuration editor (ENTER to save, CTRL-C to abort)
 \         Rescales the tuning aid display
 CTRL-C    Exit
+CTRL-L    Clear RX window
 
 Clicking in the RX window will toggle the FIGS shift.  While clicking again will
 reverse it again, the extents are whitespace and shift changes, as a result,
 clicking in a "word" which contains both FIGS and LTRS is irreversable.
+
+Sending a macro which starts with "CQ CQ" will clear the RX window.
 
 Outstanding issues:
 * I should idle with LTRS, not a mark signal... super tricky.

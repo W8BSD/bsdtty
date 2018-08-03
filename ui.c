@@ -291,6 +291,10 @@ check_input(void)
 			toggle_figs(ev.y, ev.x);
 		return check_input();	// TODO: Recusion!  Mah stack!
 	}
+	if (ch == 0x0c) {
+		clear_rx_window();
+		return false;
+	}
 	if (ch != ERR) {
 		ungetch(ch);
 		return true;
@@ -969,5 +973,13 @@ toggle_figs(int y, int x)
 		mvwaddch(rx, fy, fx, ach);
 	}
 	wmove(rx, iy, ix);
+	wrefresh(rx);
+}
+
+void
+clear_rx_window(void)
+{
+	wclear(rx);
+	wmove(rx, 0, 0);
 	wrefresh(rx);
 }

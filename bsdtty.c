@@ -466,6 +466,8 @@ do_macro(int fkey, bool *figs)
 	m = fkey - 1;
 	if (settings.macros[m] == NULL)
 		return true;
+	if (strncasecmp(settings.macros[m], "CQ CQ", 5))
+		clear_rx_window();
 	len = strlen(settings.macros[m]);
 	for (i = 0; i < len; i++)
 		send_char(settings.macros[m][i], figs);
