@@ -241,7 +241,7 @@ setup_log(void)
 
 	if (log_file != NULL)
 		fclose(log_file);
-	log_file = fopen(settings.log_name, "wb");
+	log_file = fopen(settings.log_name, "a");
 	if (log_file == NULL)
 		printf_errno("opening log file");
 	now = time(NULL);
