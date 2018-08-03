@@ -52,6 +52,7 @@ static WINDOW *tx;
 static WINDOW *tx_title;
 static int tx_width;
 static int tx_height;
+static bool reset_tuning = false;
 
 static bool baudot_char(int ch, const void *ab);
 static void do_endwin(void);
@@ -94,6 +95,12 @@ setup_curses(void)
 	 * in wgetch() as well.
 	 */
 	mouseinterval(0);
+}
+
+void
+reset_tuning_aid(void)
+{
+	reset_tuning = true;
 }
 
 void
@@ -174,6 +181,8 @@ update_tuning_aid(double mark, double space)
 		}
 		wmove(tx, 0, 0);
 		wrefresh(tx);
+		if (reset_tuning)
+			maxm = maxs = reset_tuning = 0;
 		wsamp = 0;
 	}
 }

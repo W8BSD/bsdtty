@@ -438,6 +438,9 @@ do_tx(void)
 					settings.charset = 0;
 				display_charset(charsets[settings.charset].name);
 				break;
+			case '\\':
+				reset_tuning_aid();
+				break;
 			case 0x7f:
 			case 0x08:
 				if (!get_rts())

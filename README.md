@@ -19,6 +19,7 @@ TAB       Toggles TX
 [         Previous character set
 ]         Next character set
 Backspace Configuration editor (ENTER to save, CTRL-C to abort)
+\         Rescales the tuning aid display
 CTRL-C    Exit
 
 Clicking in the RX window will toggle the FIGS shift.  While clicking again will
@@ -31,4 +32,3 @@ Outstanding issues:
 * Really needs a manpage.
 * You shouldn't need to exit and restart the program to load setting changes.
 * Allow console resizing.
-* Scale up the tuning aid after a peak...
