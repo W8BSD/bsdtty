@@ -31,6 +31,7 @@
 #include <curses.h>
 #include <errno.h>
 #include <form.h>
+#include <inttypes.h>
 #include <math.h>
 #include <signal.h>
 #include <stdarg.h>
@@ -66,10 +67,15 @@ setup_curses(void)
 {
 	initscr();
 	atexit(do_endwin);
+	start_color();
+	init_pair(1, COLOR_GREEN, COLOR_GREEN);
+	init_pair(2, COLOR_YELLOW, COLOR_YELLOW);
+	init_pair(3, COLOR_RED, COLOR_RED);
 	raw();		// cbreak() leaves SIGINT working
 	noecho();
 	nonl();
 	keypad(stdscr, TRUE);
+	curs_set(0);
 
 	setup_windows();
 }
@@ -823,5 +829,29 @@ display_charset(const char *name)
 
 	snprintf(padded, sizeof(padded), "%-11s", name);
 	mvwaddstr(status, 0, 6, padded);
+	wrefresh(status);
+}
+
+void
+audio_meter(int16_t envelope)
+{
+	int i = 0;
+	int blocks = envelope / (INT16_MAX / 48);
+
+	if (blocks > 16)
+		blocks = 16;
+	mvwaddstr(status, 0, tx_width - 16, "                ");
+	wmove(status, 0, tx_width - 16);
+	wcolor_set(status, 1, NULL);
+	wattron(status, A_BOLD);
+	for (i = 0; i < blocks; i++) {
+		if (i == 12)
+			wcolor_set(status, 2, NULL);
+		else if (i == 14)
+			wcolor_set(status, 3, NULL);
+		waddch(status, ACS_BLOCK);
+	}
+	wcolor_set(status, 0, NULL);
+	wattroff(status, A_BOLD);
 	wrefresh(status);
 }

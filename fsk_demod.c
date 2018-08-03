@@ -79,6 +79,8 @@ static struct bq_filter *slpfilt;
 static struct bq_filter *mapfilt;
 // Space phase filter
 static struct bq_filter *sapfilt;
+// Audio meter filter
+static struct bq_filter *afilt;
 // Hunt for Start
 static double *hfs_buf = NULL;
 static size_t hfs_bufmax;
@@ -344,7 +346,7 @@ current_value(void)
 	int max;
 	int16_t tmpbuf[1];
 	int16_t *tb = tmpbuf;
-	double mv, emv, sv, esv, cv;
+	double mv, emv, sv, esv, cv, a;
 	int i, j;
 	audio_errinfo errinfo;
 
@@ -416,6 +418,8 @@ current_value(void)
 	emv = bq_filter(mv*mv, mlpfilt);
 	esv = bq_filter(sv*sv, slpfilt);
 	update_tuning_aid(mv, sv);
+	a = bq_filter((double)dsp_buf[tail] * dsp_buf[tail], afilt);
+	audio_meter((int16_t)sqrt(a));
 	tail++;
 	if (tail > dsp_bufmax)
 		tail = 0;
@@ -455,6 +459,9 @@ create_filters(void)
 	 */
 	mapfilt = calc_apf_coef(settings.mark_freq / 1.75, 1);
 	sapfilt = calc_apf_coef(settings.space_freq * 1.75, 1);
+
+	/* For the audio level meter */
+	afilt = calc_lpf_coef(10, 0.5);
 }
 
 static struct bq_filter *

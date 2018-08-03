@@ -21,5 +21,6 @@ void show_reverse(bool rev);
 void change_settings(void);
 void load_config(void);
 void display_charset(const char *name);
+void audio_meter(int16_t envelope);
 
 #endif
