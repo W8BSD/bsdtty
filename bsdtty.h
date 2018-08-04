@@ -14,6 +14,7 @@ struct bt_settings {
 	int	baud_numerator;
 	char	*macros[10];
 	int	charset;
+	bool	afsk;
 };
 
 extern struct bt_settings settings;

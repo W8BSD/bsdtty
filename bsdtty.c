@@ -49,6 +49,7 @@ static void done(void);
 static bool get_rts(void);
 static void input_loop(void);
 static void send_char(const char ch, bool *figs);
+static void send_rtty_char(char ch);
 static void setup_log(void);
 static void setup_tty(void);
 static void usage(const char *cmd);
@@ -62,7 +63,8 @@ struct bt_settings settings = {
 	.lp_filter_q = 0.5,
 	.mark_freq = 2125,
 	.space_freq = 2295,
-	.charset = 0
+	.charset = 0,
+	.afsk = false
 };
 
 /* UART Stuff */
@@ -132,10 +134,15 @@ int main(int argc, char **argv)
 {
 	int ch;
 
-	while ((ch = getopt(argc, argv, "c:d:l:m:n:p:q:Q:r:s:t:1:2:3:4:5:6:7:8:9:0:")) != -1) {
+	load_config();
+
+	while ((ch = getopt(argc, argv, "ac:d:l:m:n:p:q:Q:r:s:t:1:2:3:4:5:6:7:8:9:0:")) != -1) {
 		while (optarg && isspace(*optarg))
 			optarg++;
 		switch (ch) {
+			case 'a':
+				settings.afsk = true;
+				break;
 			case 'n':	// baud_numerator
 				settings.baud_numerator = strtoi(optarg, NULL, 10);
 				break;
@@ -191,7 +198,6 @@ int main(int argc, char **argv)
 	}
 
 	setup_defaults();
-	load_config();
 
 	setup_tty();
 
@@ -390,7 +396,11 @@ do_tx(void)
 		ch = get_input();
 		switch (ch) {
 			case -1:
-				printf_errno("getting character");
+				if (settings.afsk)
+					send_rtty_char(0x1f);
+				else
+					printf_errno("getting character");
+				break;
 			case 3:
 				return false;
 			case RTTY_FKEY(1):
@@ -490,10 +500,14 @@ send_char(const char ch, bool *figs)
 		rts ^= 1;
 		state = TIOCM_RTS;
 		if (!rts) {
-			write(tty, "\x04", 1);
-			ioctl(tty, TIOCDRAIN);
-			// Space still gets cut off... wait one char
-			usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
+			send_rtty_char(4);
+			if (settings.afsk) {
+				ioctl(tty, TIOCDRAIN);
+				// Space still gets cut off... wait one char
+				usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
+			}
+			else
+				end_afsk_tx();
 		}
 		if (ioctl(tty, rts ? TIOCMBIS : TIOCMBIC, &state) != 0)
 			printf_errno("%s RTS bit", rts ? "setting" : "resetting");
@@ -505,7 +519,9 @@ send_char(const char ch, bool *figs)
 			 * a LTRS is the safest, since a FIGS will get
 			 * repeated after the CRLF.
 			 */
-			write(tty, "\x1b\x08\x02", 2);
+			send_rtty_char(0x1b);
+			send_rtty_char(8);
+			send_rtty_char(2);
 		}
 		now = time(NULL);
 		if (log_file != NULL)
@@ -518,8 +534,7 @@ send_char(const char ch, bool *figs)
 		// Send FIGS/LTRS as needed
 		if ((!!(bch & 0x20)) != *figs) {
 			*figs = !!(bch & 0x20);
-			if (write(tty, &fstr[*figs], 1) != 1)
-				printf_errno("error sending FIGS/LTRS");
+			send_rtty_char(fstr[*figs]);
 		}
 		/* We do this to ensure it's valid baudot */
 		ach = baudot2asc(bch & 0x1f, bch & 0x20);
@@ -552,13 +567,9 @@ send_char(const char ch, bool *figs)
 		if (ach == ' ')
 			*figs = false;	// USOS
 		bch &= 0x1f;
-		if (write(tty, &bch, 1) != 1)
-			printf_errno("error sending char 0x%02x", bch);
-		if (bch == 0x08) {
-			bch = 0x02;
-			if (write(tty, &bch, 1) != 1)
-				printf_errno("error sending char 0x%02x", bch);
-		}
+		send_rtty_char(bch);
+		if (bch == 0x08)
+			send_rtty_char(2);
 	}
 }
 
@@ -638,6 +649,19 @@ usage(const char *cmd)
 	       "-9  F9 Macro                     <empty>\n"
 	       "-0  F10 Macro                    <empty>\n"
 	       "-c  Charset to use               0\n"
+	       "-a  Use AFSK (no argument)\n"
 	       "\n", cmd);
 	exit(EXIT_FAILURE);
+}
+
+static void
+send_rtty_char(char ch)
+{
+	if (settings.afsk) {
+		send_afsk_char(ch);
+	}
+	else {
+		if (write(tty, &ch, 1) != 1)
+			printf_errno("error sending FIGS/LTRS");
+	}
 }

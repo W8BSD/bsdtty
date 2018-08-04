@@ -392,7 +392,10 @@ setup_windows(void)
 	wrefresh(rx);
 	wrefresh(tx_title);
 	wrefresh(tx);
-	wtimeout(tx, -1);
+	if (settings.afsk)
+		wtimeout(tx, 0);
+	else
+		wtimeout(tx, -1);
 	wtimeout(rx, 0);
 	keypad(rx, TRUE);
 	keypad(tx, TRUE);
@@ -432,7 +435,8 @@ struct field_info {
 		STYPE_STRING,
 		STYPE_BAUDOT,
 		STYPE_DOUBLE,
-		STYPE_INT
+		STYPE_INT,
+		STYPE_BOOL
 	} type;
 	void *ptr;
 } fields[] = {
@@ -562,6 +566,12 @@ struct field_info {
 		.type = STYPE_INT,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, charset)
 	},
+	{
+		.name = "AFSK mode",
+		.key = "afsk",
+		.type = STYPE_BOOL,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, charset)
+	},
 };
 #define NUM_FIELDS (sizeof(fields) / sizeof(fields[0]))
 
@@ -623,6 +633,11 @@ change_settings(void)
 			case STYPE_INT:
 				set_field_type(field[i], TYPE_INTEGER, 0, 1, 0);
 				snprintf(cv, sizeof(cv), "%d", *(int *)fields[i].ptr);
+				set_field_buffer(field[i], 0, cv);
+				break;
+			case STYPE_BOOL:
+				set_field_type(field[i], TYPE_INTEGER, 0, 0, 1);
+				snprintf(cv, sizeof(cv), "%d", *(bool *)fields[i].ptr);
 				set_field_buffer(field[i], 0, cv);
 				break;
 		}
@@ -840,6 +855,9 @@ load_config(void)
 				break;
 			case STYPE_INT:
 				*(int *)fields[field].ptr = strtoi(ch, NULL, 10);
+				break;
+			case STYPE_BOOL:
+				*(bool *)fields[field].ptr = strtoi(ch, NULL, 10);
 				break;
 		}
 	}
