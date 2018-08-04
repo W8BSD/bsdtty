@@ -1,5 +1,5 @@
-CFLAGS	+=	-Wall -g -O3 -pg
-LDLIBS	+=	-lform -lcurses -lm -pg
+CFLAGS	+=	-Wall -g -O3
+LDLIBS	+=	-lform -lcurses -lm
 
 .ifdef WITH_OUTRIGGER
   CFLAGS += -DWITH_OUTRIGGER -I../openham/outrigger/ -L../openham/outrigger/build/
