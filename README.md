@@ -3,8 +3,8 @@ https://reviews.freebsd.org/D16402 for exact baud rate.  Without this patch,
 there's an RTS pulse when the tty is opened, and the baudrate is 45 instead
 of 1000/22 (45.454545...).
 
-This does hardware keyed RTTY using a UART.  UARTs supported by the patch are
-only the 8250 based ones... no USB serial port support yet.
+This does hardware keyed RTTY using a UART or AFSK.  UARTs supported by the
+patch are only the 8250 based ones... no USB serial port support yet.
 
 It also decodes RTTY.
 
