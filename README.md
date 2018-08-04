@@ -41,3 +41,4 @@ Outstanding issues:
 * Really needs a manpage.
 * You shouldn't need to exit and restart the program to load setting changes.
 * Allow console resizing.
+* Add (optional) support for Outrigger
