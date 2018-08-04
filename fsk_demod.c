@@ -750,20 +750,20 @@ generate_sine(double freq, struct afsk_buf *buf)
 	double wavelen = settings.dsp_rate / freq;
 	size_t nsamp = settings.dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator * 2) + 2;
 
-	buf->buf = malloc(sizeof(buf->buf[0]) * nsamp);
+	buf->buf = calloc(sizeof(buf->buf[0]) * nsamp, dsp_channels);
 	if (buf->buf == NULL)
 		printf_errno("allocating AFSK buffer");
 
 	for (i = 0; i < nsamp; i++)
-		buf->buf[i] = sin((double)i / wavelen * (2.0 * M_PI)) * (INT16_MAX >> 1);
+		buf->buf[i*dsp_channels] = sin((double)i / wavelen * (2.0 * M_PI)) * (INT16_MAX >> 1);
 
 	for (i = nsamp - 4; i < nsamp; i++) {
-		if ((buf->buf[i] >= 0) && (buf->buf[i-1] <= 0))
+		if ((buf->buf[i * dsp_channels] >= 0) && (buf->buf[(i-1) * dsp_channels] <= 0))
 			break;
 	}
 	if (i == nsamp) {
 		for (--i; i > 0; i--) {
-			if ((buf->buf[i] >= 0) && (buf->buf[i-1] <= 0))
+			if ((buf->buf[i * dsp_channels] >= 0) && (buf->buf[(i-1) * dsp_channels] <= 0))
 				break;
 		}
 	}
@@ -778,7 +778,7 @@ adjust_wave(struct afsk_buf *buf, double start_phase)
 	double phase_step = (M_PI / 2) / buf->size;
 
 	for (i = 0; i < buf->size; i++) {
-		buf->buf[i] *= sin(start_phase);
+		buf->buf[i * dsp_channels] *= sin(start_phase);
 		start_phase += phase_step;
 	}
 }
