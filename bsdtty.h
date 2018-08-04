@@ -1,6 +1,14 @@
 #ifndef BSDTTY_H
 #define BSDTTY_H
 
+#ifdef WITH_OUTRIGGER
+#include "api/api.h"
+#include "iniparser/src/dictionary.h"
+
+extern dictionary *or_d;
+extern struct rig *rig;
+#endif
+
 struct bt_settings {
 	char	*log_name;
 	char	*tty_name;
@@ -16,6 +24,9 @@ struct bt_settings {
 	int	charset;
 	bool	afsk;
 	char	*callsign;
+#ifdef WITH_OUTRIGGER
+	bool	or_ptt;
+#endif
 };
 
 extern struct bt_settings settings;

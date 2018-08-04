@@ -65,7 +65,10 @@ struct bt_settings settings = {
 	.mark_freq = 2125,
 	.space_freq = 2295,
 	.charset = 0,
-	.afsk = false
+	.afsk = false,
+#ifdef WITH_OUTRIGGER
+	.or_ptt = false
+#endif
 };
 
 /* UART Stuff */
@@ -77,13 +80,14 @@ static bool reverse = false;
 /* Log thing */
 static FILE *log_file;
 
-char *their_callsign;
+static char *their_callsign;
+
 struct charset {
 	const char *chars;
 	const char *name;
 };
 
-struct charset charsets[] = {
+static struct charset charsets[] = {
 	{
 		// From http://baudot.net/docs/smith--teletype-codes.pdf
 		.name = "ITA2",
@@ -132,18 +136,35 @@ struct charset charsets[] = {
 	  },
 };
 
+#ifdef WITH_OUTRIGGER
+dictionary *or_d;
+struct rig *rig;
+#endif
+
 int main(int argc, char **argv)
 {
 	int ch;
 
 	load_config();
 
-	while ((ch = getopt(argc, argv, "ac:d:l:m:n:p:q:Q:r:s:t:1:2:3:4:5:6:7:8:9:0:")) != -1) {
+#ifdef WITH_OUTRIGGER
+	while ((ch = getopt(argc, argv, "ac:C:d:l:m:n:op:q:Q:r:s:t:1:2:3:4:5:6:7:8:9:0:")) != -1) {
+#else
+	while ((ch = getopt(argc, argv, "ac:C:d:l:m:n:p:q:Q:r:s:t:1:2:3:4:5:6:7:8:9:0:")) != -1) {
+#endif
 		while (optarg && isspace(*optarg))
 			optarg++;
 		switch (ch) {
 			case 'a':
 				settings.afsk = true;
+				break;
+			case 'o':
+#ifdef WITH_OUTRIGGER
+				settings.or_ptt = true;
+#endif
+				break;
+			case 'C':
+				settings.callsign = strdup(optarg);
 				break;
 			case 'n':	// baud_numerator
 				settings.baud_numerator = strtoi(optarg, NULL, 10);
@@ -538,6 +559,11 @@ send_char(const char ch, bool *figs)
 				usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
 			}
 		}
+#ifdef WITH_OUTRIGGER
+		if (settings.or_ptt)
+			set_ptt(rig, rts);
+		else
+#endif
 		if (ioctl(tty, rts ? TIOCMBIS : TIOCMBIC, &state) != 0)
 			printf_errno("%s RTS bit", rts ? "setting" : "resetting");
 		if (rts) {
@@ -607,6 +633,10 @@ get_rts(void)
 {
 	int state;
 
+#ifdef WITH_OUTRIGGER
+	if (settings.or_ptt)
+		return get_ptt(rig);
+#endif
 	if (ioctl(tty, TIOCMGET, &state) == -1)
 		printf_errno("getting RTS state");
 	return !!(state & TIOCM_RTS);
@@ -616,6 +646,11 @@ static void
 done(void)
 {
 	int state = 0;
+
+#ifdef WITH_OUTRIGGER
+	if (settings.or_ptt && rig)
+		set_ptt(rig, false);
+#endif
 
 	if (tty != -1) {
 		ioctl(tty, TIOCMGET, &state);
@@ -669,8 +704,8 @@ usage(const char *cmd)
 	       "-Q  Envelope lowpass filter Q    0.5\n"
 	       "-1  F1 Macro                     <empty>\n"
 	       "-2  F2 Macro                     \"CQ CQ CQ CQ CQ CQ DE W8BSD W8BSD W8BSD PSE K\"\n"
-	       "-3  F3 Macro                     <empty>\n"
-	       "-4  F4 Macro                     <empty>\n"
+	       "-3  F3 Macro                     \"\\ \"\n"
+	       "-4  F4 Macro                     \"` DE \\\"\n"
 	       "-5  F5 Macro                     <empty>\n"
 	       "-6  F6 Macro                     <empty>\n"
 	       "-7  F7 Macro                     <empty>\n"
@@ -679,6 +714,10 @@ usage(const char *cmd)
 	       "-0  F10 Macro                    <empty>\n"
 	       "-c  Charset to use               0\n"
 	       "-a  Use AFSK (no argument)\n"
+	       "-C  Callsign                     \"W8BSD\"\n"
+#ifdef WITH_OUTRIGGER
+	       "-o  Use Outrigger PTT (no argument)\n"
+#endif
 	       "\n", cmd);
 	exit(EXIT_FAILURE);
 }

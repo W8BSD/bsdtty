@@ -43,14 +43,6 @@
 #include "bsdtty.h"
 #include "ui.h"
 
-#ifdef WITH_OUTRIGGER
-#include "api/api.h"
-#include "iniparser/src/dictionary.h"
-
-static dictionary *or_d;
-struct rig *rig;
-#endif
-
 /* UI Stuff */
 static WINDOW *status;
 static WINDOW *status_title;
@@ -667,6 +659,14 @@ struct field_info {
 		.type = STYPE_BAUDOT,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, charset)
 	},
+#ifdef WITH_OUTRIGGER
+	{
+		.name = "Outrigger PTT",
+		.key = "outriggerptt",
+		.type = STYPE_BOOL,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, or_ptt)
+	},
+#endif
 };
 #define NUM_FIELDS (sizeof(fields) / sizeof(fields[0]))
 
