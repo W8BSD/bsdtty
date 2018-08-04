@@ -46,7 +46,8 @@
 
 struct fir_filter {
 	size_t		len;
-	int16_t		*buf;
+	double		*buf;
+	double		*tbuf;
 	double		*coef;
 	size_t		head;
 };
@@ -132,6 +133,7 @@ static bool get_bit(void);
 static bool get_stop_bit(void);
 static int next(int val, int max);
 static int prev(int val, int max);
+static void read_audio(void);
 static void send_afsk_bit(enum afsk_bit bit);
 static void send_afsk_buf(struct afsk_buf *buf);
 static void setup_audio(void);
@@ -379,18 +381,13 @@ get_stop_bit(void)
 	return ret;
 }
 
-/*
- * The current demodulated value.  Essentially the difference between
- * the mark and space envelopes.
- */
-static double
-current_value(void)
+static void
+read_audio(void)
 {
 	int ret;
 	int max;
-	int16_t tmpbuf[1];
+	int16_t tmpbuf[128];
 	int16_t *tb = tmpbuf;
-	double mv, emv, sv, esv, cv, a;
 	int i, j;
 	audio_errinfo errinfo;
 
@@ -452,6 +449,19 @@ current_value(void)
 
 	if (tail == head)
 		printf_errno("underrun %d == %d (%d)\n", tail, head, dsp_bufmax);
+}
+
+/*
+ * The current demodulated value.  Essentially the difference between
+ * the mark and space envelopes.
+ */
+static double
+current_value(void)
+{
+	double mv, emv, sv, esv, cv, a;
+
+	read_audio();
+
 #ifdef MATCHED_FILTERS
 	mv = fir_filter(dsp_buf[tail], mfilt);
 	sv = fir_filter(dsp_buf[tail], sfilt);
@@ -638,8 +648,13 @@ fir_filter(int16_t value, struct fir_filter *f)
 	res = f->buf[f->head] * f->coef[0];
 	f->head = next(f->head, f->len - 1);
 
-	for (j = 1, i = f->head; i != end; j++, i = next(i, f->len - 1))
-		res += f->buf[i] * f->coef[j];
+	memcpy(f->tbuf, &f->buf[f->head], (f->len - 1 - f->head) * sizeof(f->tbuf[0]));
+	memcpy(f->tbuf + (f->len - 1 - f->head), f->buf, f->head * sizeof(f->tbuf[0]));
+	for (i = 0; i < f->len; i++)
+		f->tbuf[i] *= f->coef[i];
+
+	for (i = 0; i < f->len; i++)
+		res += f->tbuf[i];
 
 	return res / f->len;
 }
@@ -665,6 +680,9 @@ create_matched_filter(double frequency)
 	ret->buf = calloc(sizeof(*ret->buf) * ret->len, 1);
 	if (ret == NULL)
 		printf_errno("allocating FIR buffer");
+	ret->tbuf = malloc(sizeof(*ret->buf) * ret->len);
+	if (ret == NULL)
+		printf_errno("allocating FIR temp buffer");
 	ret->coef = malloc(sizeof(*ret->coef) * ret->len);
 	if (ret == NULL)
 		printf_errno("allocating FIR coef");

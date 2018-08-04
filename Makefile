@@ -1,5 +1,10 @@
-CFLAGS	+=	-Wall -g -O0
-LDLIBS	+=	-lform -lcurses -lm
+CFLAGS	+=	-Wall -g -O3 -pg
+LDLIBS	+=	-lform -lcurses -lm -pg
+
+.ifdef WITH_OUTRIGGER
+  CFLAGS += -DWITH_OUTRIGGER -I../openham/outrigger/ -L../openham/outrigger/build/
+  LDLIBS += -loutrigger -lpthread
+.endif
 
 OBJS = bsdtty.o fsk_demod.o ui.o
 

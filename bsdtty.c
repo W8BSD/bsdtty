@@ -215,6 +215,8 @@ int main(int argc, char **argv)
 
 	display_charset(charsets[settings.charset].name);
 
+	setup_outrigger();
+
 	// Finally, do the thing.
 	input_loop();
 	return EXIT_SUCCESS;

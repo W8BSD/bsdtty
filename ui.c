@@ -43,6 +43,14 @@
 #include "bsdtty.h"
 #include "ui.h"
 
+#ifdef WITH_OUTRIGGER
+#include "api/api.h"
+#include "iniparser/src/dictionary.h"
+
+static dictionary *or_d;
+struct rig *rig;
+#endif
+
 /* UI Stuff */
 static WINDOW *status;
 static WINDOW *status_title;
@@ -278,12 +286,81 @@ write_rx(char ch)
 	wrefresh(rx);
 }
 
+static void
+show_freq(void)
+{
+#ifdef WITH_OUTRIGGER
+	static uint64_t lfreq = 0;
+	uint64_t freq;
+	enum rig_modes lmode = MODE_UNKNOWN;
+	enum rig_modes mode;
+	char fstr[32];
+	int pos;
+
+	if (rig) {
+		freq = get_frequency(rig, VFO_UNKNOWN);
+		if (freq) {
+			sprintf(fstr, "%" PRIu64, freq);
+			for (pos = strlen(fstr) - 3; pos > 0; pos -= 3) {
+				memmove(&fstr[pos]+1, &fstr[pos], strlen(&fstr[pos])+1);
+				fstr[pos] = '.';
+			}
+			if (lfreq != freq)
+				mvwaddstr(status, 0, 19, fstr);
+		}
+		mode = get_mode(rig);
+		switch(mode) {
+			case MODE_UNKNOWN:
+				fstr[0] = 0;
+				break;
+			case MODE_CW:
+				strcpy(fstr, "CW");
+				break;
+			case MODE_CWN:
+				strcpy(fstr, "CWN");
+				break;
+			case MODE_CWR:
+				strcpy(fstr, "CWR");
+				break;
+			case MODE_CWRN:
+				strcpy(fstr, "CWRN");
+				break;
+			case MODE_AM:
+				strcpy(fstr, "AM");
+				break;
+			case MODE_LSB:
+				strcpy(fstr, "LSB");
+				break;
+			case MODE_USB:
+				strcpy(fstr, "USB");
+				break;
+			case MODE_FM:
+				strcpy(fstr, "FM");
+				break;
+			case MODE_FMN:
+				strcpy(fstr, "FMN");
+				break;
+			case MODE_FSK:
+				strcpy(fstr, "FSK");
+				break;
+		}
+		if (lmode != mode)
+			mvwaddstr(status, 0, 44, fstr);
+		if (lmode != mode || lfreq != freq)
+			wrefresh(status);
+		lmode = mode;
+		lfreq = freq;
+	}
+#endif
+}
+
 bool
 check_input(void)
 {
 	MEVENT ev;
 	int ch;
 
+	show_freq();
 	ch = wgetch(rx);
 	if (ch == KEY_MOUSE) {
 		getmouse(&ev);
@@ -1000,4 +1077,17 @@ clear_rx_window(void)
 	wclear(rx);
 	wmove(rx, 0, 0);
 	wrefresh(rx);
+}
+
+void
+setup_outrigger(void)
+{
+#ifdef WITH_OUTRIGGER
+	or_d = dictionary_new(0);
+
+	dictionary_set(or_d, "rig:rig", "TS-940S");
+	dictionary_set(or_d, "rig:port", "/dev/ttyu2");
+
+	rig = init_rig(or_d, "rig");
+#endif
 }
