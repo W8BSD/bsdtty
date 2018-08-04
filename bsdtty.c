@@ -588,8 +588,10 @@ send_char(const char ch, bool *figs)
 			send_rtty_char(2);
 		}
 		now = time(NULL);
-		if (log_file != NULL)
+		if (log_file != NULL) {
 			fprintf(log_file, "\n------- %s of transmission (%.24s) -------\n", rts ? "Start" : "End", ctime(&now));
+			fflush(log_file);
+		}
 		mark_tx_extent(rts);
 	}
 	if (bch == 0)
