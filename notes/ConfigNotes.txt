@@ -1,0 +1,25 @@
+Configuration:
+Global (TCP host, user control, etc)
+Per-rig
+
+http://github.com/williamh/dotconf
+
+libconfuse-2.7
+
+--disable-nls
+
+xmllint
+doxygen
+
+--docdir=DIR
+--mandir=DIR
+--htmldir=DIR
+
+[Rig Name] ; No colons
+rig = TS-940S
+type = serial
+port = /dev/ttyu1
+speed = 9600
+databits = 8
+stopbits = 2
+parity = N* ; None, Odd, Even, High, Low
