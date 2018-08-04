@@ -58,7 +58,7 @@ static void setup_defaults(void);
 struct bt_settings settings = {
 	.baud_numerator = 1000,
 	.baud_denominator = 22,
-	.dsp_rate = 48000,
+	.dsp_rate = 16000,
 	.bp_filter_q = 10,
 	.lp_filter_q = 0.5,
 	.mark_freq = 2125,
@@ -637,7 +637,7 @@ usage(const char *cmd)
 	       "-n  Baudrate Numerator           1000\n"
 	       "-d  Baudrate Denominator         22\n"
 	       "-l  Logfile name                 bsdtty.log\n"
-	       "-r  DSP rate                     48000\n"
+	       "-r  DSP rate                     16000\n"
 	       "-q  Bandpass filter Q            10.0\n"
 	       "-Q  Envelope lowpass filter Q    0.5\n"
 	       "-1  F1 Macro                     <empty>\n"
