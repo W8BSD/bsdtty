@@ -761,5 +761,7 @@ setup_outrigger(void)
 	dictionary_set(or_d, "rig:port", settings.or_dev);
 
 	rig = init_rig(or_d, "rig");
+	if (settings.or_ptt && rig == NULL)
+		printf_errno("unable to control rig");
 #endif
 }
