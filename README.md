@@ -42,3 +42,5 @@ Outstanding issues:
 * You shouldn't need to exit and restart the program to load setting changes.
 * Allow console resizing.
 * Add CQRLOG integration.
+* Validate settings in load_config()
+

@@ -26,6 +26,8 @@ struct bt_settings {
 	char	*callsign;
 #ifdef WITH_OUTRIGGER
 	bool	or_ptt;
+	char	*or_rig;
+	char	*or_dev;
 #endif
 };
 

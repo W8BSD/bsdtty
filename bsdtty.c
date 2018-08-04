@@ -52,6 +52,7 @@ static void send_char(const char ch, bool *figs);
 static void send_rtty_char(char ch);
 static void send_string(const char *str, bool *figs);
 static void setup_log(void);
+static void setup_outrigger(void);
 static void setup_tty(void);
 static void usage(const char *cmd);
 static void setup_defaults(void);
@@ -260,13 +261,19 @@ setup_defaults(void)
 	if (settings.dsp_name == NULL)
 		settings.dsp_name = strdup("/dev/dsp8");
 	if (settings.macros[1] == NULL)
-		settings.macros[1] = strdup("CQ CQ CQ CQ CQ CQ DE W8BSD W8BSD W8BSD PSE K\t");
+		settings.macros[1] = strdup("CQ CQ CQ CQ CQ CQ DE \\ \\ \\ PSE K\t");
 	if (settings.macros[2] == NULL)
 		settings.macros[2] = strdup("\\ ");
 	if (settings.macros[3] == NULL)
 		settings.macros[3] = strdup("` DE \\\t");
 	if (settings.callsign == NULL)
 		settings.callsign = strdup("W8BSD");
+#ifdef WITH_OUTRIGGER
+	if (settings.or_rig == NULL)
+		settings.or_rig = strdup("TS-940S");
+	if (settings.or_dev == NULL)
+		settings.or_dev = strdup("/dev/ttyu2");
+#endif
 }
 
 static void
@@ -742,4 +749,17 @@ captured_callsign(const char *str)
 	if (str == NULL || str[0] == 0)
 		return;
 	their_callsign = strdup(str);
+}
+
+static void
+setup_outrigger(void)
+{
+#ifdef WITH_OUTRIGGER
+	or_d = dictionary_new(0);
+
+	dictionary_set(or_d, "rig:rig", settings.or_rig);
+	dictionary_set(or_d, "rig:port", settings.or_dev);
+
+	rig = init_rig(or_d, "rig");
+#endif
 }

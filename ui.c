@@ -651,13 +651,13 @@ struct field_info {
 		.name = "AFSK mode",
 		.key = "afsk",
 		.type = STYPE_BOOL,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, charset)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, afsk)
 	},
 	{
 		.name = "Callsign",
 		.key = "callsign",
 		.type = STYPE_BAUDOT,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, charset)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, callsign)
 	},
 #ifdef WITH_OUTRIGGER
 	{
@@ -665,6 +665,18 @@ struct field_info {
 		.key = "outriggerptt",
 		.type = STYPE_BOOL,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, or_ptt)
+	},
+	{
+		.name = "Outrigger rig",
+		.key = "outriggerrig",
+		.type = STYPE_STRING,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, or_rig)
+	},
+	{
+		.name = "Outrigger device",
+		.key = "outriggerdev",
+		.type = STYPE_STRING,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, or_dev)
 	},
 #endif
 };
@@ -1164,17 +1176,4 @@ clear_rx_window(void)
 	wclear(rx);
 	wmove(rx, 0, 0);
 	wrefresh(rx);
-}
-
-void
-setup_outrigger(void)
-{
-#ifdef WITH_OUTRIGGER
-	or_d = dictionary_new(0);
-
-	dictionary_set(or_d, "rig:rig", "TS-940S");
-	dictionary_set(or_d, "rig:port", "/dev/ttyu2");
-
-	rig = init_rig(or_d, "rig");
-#endif
 }
