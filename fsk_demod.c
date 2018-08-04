@@ -640,8 +640,7 @@ bq_filter(double value, struct bq_filter *f)
 static double
 fir_filter(int16_t value, struct fir_filter *f)
 {
-	size_t end = f->head;
-	size_t i, j;
+	size_t i;
 	double res = 0;
 
 	f->buf[f->head] = value;
