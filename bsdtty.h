@@ -15,6 +15,7 @@ struct bt_settings {
 	char	*macros[10];
 	int	charset;
 	bool	afsk;
+	char	*callsign;
 };
 
 extern struct bt_settings settings;
@@ -22,5 +23,6 @@ extern struct bt_settings settings;
 char asc2baudot(int asc, bool figs);
 char baudot2asc(int baudot, bool figs);
 int strtoi(const char *, char **endptr, int base);
+void captured_callsign(const char *str);
 
 #endif

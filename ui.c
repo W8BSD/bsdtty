@@ -63,6 +63,7 @@ static int tx_height;
 static bool reset_tuning = false;
 
 static bool baudot_char(int ch, const void *ab);
+static void capture_call(int y, int x);
 static void do_endwin(void);
 static char *escape_config(char *str);
 static int find_field(const char *key);
@@ -96,8 +97,15 @@ setup_curses(void)
 	 * BUTTON1_RELEASED along with BUTTON1_PRESSED, wgetch() will
 	 * block indefinately after a clock(!)  We simply ignore the
 	 * release event though.
+	 * 
+	 * As it happens, we need to capture BUTTON1_CLICKED as well.
+	 * If we press and release "fast enough" it's a clicked event,
+	 * not a press and release, even if clocks aren't captured and
+	 * the interval is zero.
+	 * 
+	 * *sigh*
 	 */
-	mousemask(BUTTON1_PRESSED | BUTTON1_RELEASED, NULL);
+	mousemask(BUTTON1_PRESSED | BUTTON1_CLICKED | BUTTON1_RELEASED | BUTTON3_PRESSED | BUTTON3_CLICKED | BUTTON3_RELEASED, NULL);
 	/*
 	 * If we don't set mouseinterval to zero, we end up with delays
 	 * in wgetch() as well.
@@ -237,8 +245,10 @@ get_input(void)
 			return 8;
 		case KEY_MOUSE:
 			getmouse(&ev);
-			if (ev.bstate & BUTTON1_PRESSED)
+			if (ev.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED))
 				toggle_figs(ev.y, ev.x);
+			if (ev.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))
+				capture_call(ev.y, ev.x);
 			return 0;
 		default:
 			return ret;
@@ -364,8 +374,10 @@ check_input(void)
 	ch = wgetch(rx);
 	if (ch == KEY_MOUSE) {
 		getmouse(&ev);
-		if (ev.bstate & BUTTON1_PRESSED)
+		if (ev.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED))
 			toggle_figs(ev.y, ev.x);
+		else if (ev.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))
+			capture_call(ev.y, ev.x);
 		return check_input();	// TODO: Recusion!  Mah stack!
 	}
 	if (ch == 0x0c) {
@@ -647,6 +659,12 @@ struct field_info {
 		.name = "AFSK mode",
 		.key = "afsk",
 		.type = STYPE_BOOL,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, charset)
+	},
+	{
+		.name = "Callsign",
+		.key = "callsign",
+		.type = STYPE_BAUDOT,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, charset)
 	},
 };
@@ -1013,6 +1031,75 @@ can_print_inverse(chtype ch)
 	bch &= 0x1f;
 	ach = baudot2asc(bch, !figs);
 	return isprint(ach);
+}
+
+static bool is_call_char(chtype ch)
+{
+	ch &= A_CHARTEXT;
+	if (ch >= 'A' && ch <= 'Z')
+		return true;
+	if (ch >= '0' && ch <= '9')
+		return true;
+	if (ch == '/')
+		return true;
+	return false;
+}
+
+static void
+capture_call(int y, int x)
+{
+	int sx, sy;
+	int width, height;
+	int fx, fy;
+	chtype ch;
+	int iy, ix;
+	char captured[15];
+	char *c = captured;
+	char *e;
+
+	getyx(rx, iy, ix);
+	getbegyx(rx, sy, sx);
+	getmaxyx(rx, height, width);
+
+	if (y < sx || x < sx || y >= sy + height || x >= sx + width)
+		return;
+	/* From x/y, move left until the edge, or a non-call char */
+	fy = y - sy;
+	ch = mvwinch(rx, fy , x - sx);
+	if (!is_call_char(ch))
+		goto done;
+	for (fx = x - sx - 1; fx >= 0; fx--) {
+		ch = mvwinch(rx, fy , fx);
+		if (!is_call_char(ch)) {
+			fx++;
+			break;
+		}
+	}
+	if (fx == -1)
+		fx = 0;
+	/* Now, from fy/fx move left toggling shift until more space */
+	for (; fx < width; fx++) {
+		ch = mvwinch(rx, fy , fx);
+		if (is_call_char(ch)) {
+			*c++ = ch & A_CHARTEXT;
+			if (c == &captured[sizeof(captured)-1])
+				goto done;
+		}
+		else
+			break;
+	}
+	e = c;
+	while(c < &captured[sizeof(captured)-1])
+		*(c++) = ' ';
+	*c = 0;
+	mvwaddstr(status, 0, 50, captured);
+	*e = 0;
+	captured_callsign(captured);
+	wrefresh(status);
+
+done:
+	wmove(rx, iy, ix);
+	wrefresh(rx);
 }
 
 static void

@@ -50,6 +50,7 @@ static bool get_rts(void);
 static void input_loop(void);
 static void send_char(const char ch, bool *figs);
 static void send_rtty_char(char ch);
+static void send_string(const char *str, bool *figs);
 static void setup_log(void);
 static void setup_tty(void);
 static void usage(const char *cmd);
@@ -76,6 +77,7 @@ static bool reverse = false;
 /* Log thing */
 static FILE *log_file;
 
+char *their_callsign;
 struct charset {
 	const char *chars;
 	const char *name;
@@ -239,7 +241,11 @@ setup_defaults(void)
 	if (settings.macros[1] == NULL)
 		settings.macros[1] = strdup("CQ CQ CQ CQ CQ CQ DE W8BSD W8BSD W8BSD PSE K\t");
 	if (settings.macros[2] == NULL)
-		settings.macros[1] = strdup("W8BSD ");
+		settings.macros[2] = strdup("\\ ");
+	if (settings.macros[3] == NULL)
+		settings.macros[3] = strdup("` DE \\\t");
+	if (settings.callsign == NULL)
+		settings.callsign = strdup("W8BSD");
 }
 
 static void
@@ -468,6 +474,16 @@ do_tx(void)
 	}
 }
 
+static void
+send_string(const char *str, bool *figs)
+{
+	if (str == NULL)
+		return;
+
+	for (; *str; str++)
+		send_char(*str, figs);
+}
+
 static bool
 do_macro(int fkey, bool *figs)
 {
@@ -481,8 +497,19 @@ do_macro(int fkey, bool *figs)
 	if (strncasecmp(settings.macros[m], "CQ CQ", 5) == 0)
 		clear_rx_window();
 	len = strlen(settings.macros[m]);
-	for (i = 0; i < len; i++)
-		send_char(settings.macros[m][i], figs);
+	for (i = 0; i < len; i++) {
+		switch (settings.macros[m][i]) {
+			case '\\':
+				send_string(settings.callsign, figs);
+				break;
+			case '`':
+				send_string(their_callsign, figs);
+				break;
+			default:
+				send_char(settings.macros[m][i], figs);
+				break;
+		}
+	}
 	return true;
 }
 
@@ -503,13 +530,13 @@ send_char(const char ch, bool *figs)
 		state = TIOCM_RTS;
 		if (!rts) {
 			send_rtty_char(4);
-			if (settings.afsk) {
+			if (settings.afsk)
+				end_afsk_tx();
+			else {
 				ioctl(tty, TIOCDRAIN);
 				// Space still gets cut off... wait one char
 				usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
 			}
-			else
-				end_afsk_tx();
 		}
 		if (ioctl(tty, rts ? TIOCMBIS : TIOCMBIC, &state) != 0)
 			printf_errno("%s RTS bit", rts ? "setting" : "resetting");
@@ -666,4 +693,14 @@ send_rtty_char(char ch)
 		if (write(tty, &ch, 1) != 1)
 			printf_errno("error sending FIGS/LTRS");
 	}
+}
+
+void
+captured_callsign(const char *str)
+{
+	if (their_callsign)
+		free(their_callsign);
+	if (str == NULL || str[0] == 0)
+		return;
+	their_callsign = strdup(str);
 }

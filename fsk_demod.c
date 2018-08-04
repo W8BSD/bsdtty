@@ -647,8 +647,8 @@ fir_filter(int16_t value, struct fir_filter *f)
 	res = f->buf[f->head] * f->coef[0];
 	f->head = next(f->head, f->len - 1);
 
-	memcpy(f->tbuf, &f->buf[f->head], (f->len - 1 - f->head) * sizeof(f->tbuf[0]));
-	memcpy(f->tbuf + (f->len - 1 - f->head), f->buf, f->head * sizeof(f->tbuf[0]));
+	memcpy(f->tbuf, &f->buf[f->head], (f->len - f->head) * sizeof(f->tbuf[0]));
+	memcpy(f->tbuf + (f->len - f->head), f->buf, f->head * sizeof(f->tbuf[0]));
 	for (i = 0; i < f->len; i++)
 		f->tbuf[i] *= f->coef[i];
 
