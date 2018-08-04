@@ -46,6 +46,7 @@
 static bool do_macro(int fkey, bool *figs);
 static bool do_tx(void);
 static void done(void);
+static void fix_config(void);
 static bool get_rts(void);
 static void input_loop(void);
 static void send_char(const char ch, bool *figs);
@@ -222,6 +223,7 @@ int main(int argc, char **argv)
 	}
 
 	setup_defaults();
+	fix_config();
 
 	setup_tty();
 
@@ -764,4 +766,33 @@ setup_outrigger(void)
 	if (settings.or_ptt && rig == NULL)
 		printf_errno("unable to control rig");
 #endif
+}
+
+static void
+fix_config(void)
+{
+	if (settings.dsp_name == NULL)
+		settings.dsp_name = strdup("/dev/dsp");
+	if (settings.mark_freq < 1)
+		settings.mark_freq = 2125;
+	if (settings.mark_freq > settings.dsp_rate / 2)
+		settings.mark_freq = settings.dsp_rate / 2 - 170;
+	if (settings.space_freq < 1)
+		settings.space_freq = 2295;
+	if (settings.space_freq > settings.dsp_rate / 2)
+		settings.space_freq = settings.dsp_rate / 2;
+	if (settings.dsp_rate < 8000)
+		settings.dsp_rate = 8000;
+	if (settings.baud_denominator < 1)
+		settings.baud_denominator = 1;
+	if (settings.baud_numerator < 1)
+		settings.baud_numerator = 1;
+	if (settings.charset < 0)
+		settings.charset = 0;
+	if (settings.charset > sizeof(charsets) / sizeof(charsets[0]))
+		settings.charset = 0;
+	if (settings.or_rig == NULL || *settings.or_rig == 0)
+		settings.or_ptt = false;
+	if (settings.or_dev == NULL || *settings.or_dev == 0)
+		settings.or_ptt = false;
 }
