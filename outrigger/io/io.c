@@ -52,6 +52,8 @@ static void read_thread(void *arg)
 		mutex_unlock(&hdl->lock);
 		resp = hdl->read_cb(hdl->cbdata);
 		mutex_lock(&hdl->lock);
+		if (hdl->response)
+			free(hdl->response);
 		hdl->response = resp;
 		if (hdl->sync_pending) {
 			mutex_unlock(&hdl->lock);
@@ -283,6 +285,8 @@ int io_end(struct io_handle *hdl)
 	mutex_destroy(&hdl->lock);
 	semaphore_destroy(&hdl->response_semaphore);
 	semaphore_destroy(&hdl->ack_semaphore);
+	if (hdl->response)
+		free(hdl_response);
 	switch(hdl->type) {
 		case IO_H_SERIAL:
 			serial_close(hdl->handle.serial);
