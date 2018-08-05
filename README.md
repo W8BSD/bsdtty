@@ -45,4 +45,4 @@ Outstanding issues:
 * I should idle with LTRS, not a mark signal... super tricky.
 * Really needs a manpage.
 * Add CQRLOG integration.
-
+* Per-mode offset to frequency so what's in bsdtty.log is directly usable.
