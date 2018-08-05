@@ -40,5 +40,7 @@ int strtoi(const char *, char **endptr, int base);
 void captured_callsign(const char *str);
 const char *mode_name(enum rig_modes mode);
 const char *format_freq(uint64_t freq);
+void reinit(void);
+void fix_config(void);
 
 #endif

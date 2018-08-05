@@ -62,7 +62,7 @@ struct bq_filter {
 static int last_ro = -1;
 #endif
 static double phase_rate;
-static double phase = 0;
+static double phase = 0.0;
 // Mark filter
 #ifdef MATCHED_FILTERS
 static struct fir_filter *mfilt;
@@ -84,7 +84,7 @@ static struct bq_filter *sapfilt;
 // Audio meter filter
 static struct bq_filter *afilt;
 // Hunt for Start
-static double *hfs_buf = NULL;
+static double *hfs_buf;
 static size_t hfs_bufmax;
 static int hfs_head;
 static int hfs_tail;
@@ -102,7 +102,8 @@ static int dsp = -1;
 static int dsp_afsk = -1;
 static int dsp_channels = 1;
 static int16_t *dsp_buf;
-static int head=0, tail=0;	// Empty when equal
+static int head;
+static int tail;	// Empty when equal
 static size_t dsp_bufmax;
 
 /* AFSK buffers */
@@ -129,6 +130,8 @@ static struct bq_filter * calc_bpf_coef(double f0, double q);
 static struct bq_filter * calc_lpf_coef(double f0, double q);
 static void create_filters(void);
 static double current_value(void);
+static void free_bq_filter(struct bq_filter *f);
+static void free_fir_filter(struct fir_filter *f);
 static bool get_bit(void);
 static bool get_stop_bit(void);
 static int next(int val, int max);
@@ -152,6 +155,8 @@ setup_rx(void)
 
 	phase_rate = 1/((double)settings.dsp_rate/((double)settings.baud_numerator / settings.baud_denominator));
 	hfs_buflen = ((double)settings.dsp_rate/((double)settings.baud_numerator / settings.baud_denominator)) * 7.1 + 1;
+	if (hfs_buf)
+		free(hfs_buf);
 	hfs_buf = malloc(hfs_buflen*sizeof(double));
 	if (hfs_buf == NULL)
 		printf_errno("allocating dsp buffer");
@@ -283,6 +288,8 @@ setup_audio(void)
 	int i;
 	int dsp_buflen;
 
+	if (dsp != -1)
+		close(dsp);
 	dsp = open(settings.dsp_name, O_RDONLY);
 	if (dsp == -1)
 		printf_errno("unable to open sound device");
@@ -296,12 +303,16 @@ setup_audio(void)
 	if (ioctl(dsp, SNDCTL_DSP_SPEED, &settings.dsp_rate) == -1)
 		printf_errno("setting sample rate");
 	dsp_buflen = (int)((double)settings.dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator)) + 1;
+	if (dsp_buf)
+		free(dsp_buf);
 	dsp_buf = malloc(sizeof(dsp_buf[0]) * dsp_buflen);
 	if (dsp_buf == NULL)
 		printf_errno("allocating dsp buffer");
 	dsp_bufmax = dsp_buflen - 1;
 
 	generate_afsk_samples();
+	if (dsp_afsk != -1)
+		close(dsp_afsk);
 	dsp_afsk = open(settings.dsp_name, O_WRONLY);
 	if (dsp_afsk == -1)
 		printf_errno("unable to open AFSK sound device");
@@ -489,9 +500,13 @@ static void
 create_filters(void)
 {
 #ifndef MATCHED_FILTERS
+	free_bq_filter(mfilt);
+	free_bq_filter(sfilt);
 	mfilt = calc_bpf_coef(settings.mark_freq, settings.bp_filter_q);
 	sfilt = calc_bpf_coef(settings.space_freq, settings.bp_filter_q);
 #else
+	free_fir_filter(mfilt);
+	free_fir_filter(sfilt);
 	mfilt = create_matched_filter(settings.mark_freq);
 	sfilt = create_matched_filter(settings.space_freq);
 #endif
@@ -500,6 +515,8 @@ create_filters(void)
 	 * TODO: Do we need to get the envelopes separately, or just
 	 * take the envelope of the differences?
 	 */
+	free_bq_filter(mlpfilt);
+	free_bq_filter(slpfilt);
 	mlpfilt = calc_lpf_coef(((double)settings.baud_numerator / settings.baud_denominator)*1.1, settings.lp_filter_q);
 	slpfilt = calc_lpf_coef(((double)settings.baud_numerator / settings.baud_denominator)*1.1, settings.lp_filter_q);
 
@@ -511,10 +528,13 @@ create_filters(void)
 	 * 
 	 * TODO: Figure out how to calculate phase in biquad IIR filters.
 	 */
+	free_bq_filter(mapfilt);
+	free_bq_filter(sapfilt);
 	mapfilt = calc_apf_coef(settings.mark_freq / 1.75, 1);
 	sapfilt = calc_apf_coef(settings.space_freq * 1.75, 1);
 
 	/* For the audio level meter */
+	free_bq_filter(afilt);
 	afilt = calc_lpf_coef(10, 0.5);
 }
 
@@ -749,6 +769,8 @@ generate_sine(double freq, struct afsk_buf *buf)
 	double wavelen = settings.dsp_rate / freq;
 	size_t nsamp = settings.dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator * 2) + 2;
 
+	if (buf->buf)
+		free(buf->buf);
 	buf->buf = calloc(sizeof(buf->buf[0]) * nsamp, dsp_channels);
 	if (buf->buf == NULL)
 		printf_errno("allocating AFSK buffer");
@@ -779,6 +801,27 @@ adjust_wave(struct afsk_buf *buf, double start_phase)
 	for (i = 0; i < buf->size; i++) {
 		buf->buf[i * dsp_channels] *= sin(start_phase);
 		start_phase += phase_step;
+	}
+}
+
+static void
+free_bq_filter(struct bq_filter *f)
+{
+	if (f)
+		free(f);
+}
+
+static void
+free_fir_filter(struct fir_filter *f)
+{
+	if (f) {
+		if (f->buf)
+			free(f->buf);
+		if (f->tbuf)
+			free(f->tbuf);
+		if (f->coef)
+			free(f->coef);
+		free(f);
 	}
 }
 

@@ -46,7 +46,6 @@
 static bool do_macro(int fkey, bool *figs);
 static bool do_tx(void);
 static void done(void);
-static void fix_config(void);
 static bool get_rts(void);
 static void input_loop(void);
 static void send_char(const char ch, bool *figs);
@@ -248,6 +247,22 @@ int main(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
+void
+reinit(void)
+{
+	setup_tty();
+
+	// Set up the FSK stuff.
+	setup_rx();
+
+	// Set up the log file
+	setup_log();
+
+	display_charset(charsets[settings.charset].name);
+
+	setup_outrigger();
+}
+
 static void
 setup_defaults(void)
 {
@@ -285,6 +300,8 @@ setup_log(void)
 
 	if (log_file != NULL)
 		fclose(log_file);
+	if (log_file)
+		fclose(log_file);
 	log_file = fopen(settings.log_name, "a");
 	if (log_file == NULL)
 		printf_errno("opening log file");
@@ -307,6 +324,8 @@ setup_tty(void)
 #endif
 
 	// Set up the UART
+	if (tty != -1)
+		close(tty);
 	tty = open(settings.tty_name, O_RDWR|O_DIRECT|O_NONBLOCK);
 	if (tty == -1)
 		printf_errno("unable to open %s");
@@ -777,18 +796,22 @@ static void
 setup_outrigger(void)
 {
 #ifdef WITH_OUTRIGGER
+	if (or_d)
+		dictionary_del(or_d);
 	or_d = dictionary_new(0);
 
 	dictionary_set(or_d, "rig:rig", settings.or_rig);
 	dictionary_set(or_d, "rig:port", settings.or_dev);
 
+	if (rig)
+		close_rig(rig);
 	rig = init_rig(or_d, "rig");
 	if (settings.or_ptt && rig == NULL)
 		printf_errno("unable to control rig");
 #endif
 }
 
-static void
+void
 fix_config(void)
 {
 	if (settings.dsp_name == NULL)

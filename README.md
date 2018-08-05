@@ -44,5 +44,4 @@ Sending a macro which starts with "CQ CQ" will clear the RX window.
 Outstanding issues:
 * I should idle with LTRS, not a mark signal... super tricky.
 * Really needs a manpage.
-* You shouldn't need to exit and restart the program to load setting changes.
 * Add CQRLOG integration.

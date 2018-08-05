@@ -130,17 +130,19 @@ update_tuning_aid(double mark, double space)
 	chtype ch;
 	int och;
 
+	if (reset_tuning) {
+		if (buf)
+			free(buf);
+		maxm = maxs = reset_tuning = 0;
+		wsamp = 0;
+	}
+
 	if (nsamp == -1)
 		nsamp = settings.dsp_rate/((((double)settings.baud_numerator / settings.baud_denominator))*7.5);
 	if (buf == NULL) {
 		buf = malloc(sizeof(*buf) * nsamp * 2 + 1);
 		if (buf == NULL)
 			printf_errno("alocating %d bytes", sizeof(*buf) * nsamp * 2 + 1);
-	}
-
-	if (reset_tuning) {
-		maxm = maxs = reset_tuning = 0;
-		wsamp = 0;
 	}
 
 	if (phaseadj < 0) {
@@ -793,6 +795,7 @@ done:
 	unpost_form(frm);
 
 	if (ch == '\r' || ch == KEY_ENTER) {
+		fix_config();
 		if (!getenv("HOME"))
 			printf_errno("HOME not set");
 		if (asprintf(&fname, "%s/.bsdtty", getenv("HOME")) < 0)
@@ -811,6 +814,7 @@ done:
 			}
 		}
 		fclose(config);
+		reinit();
 	}
 
 	free_form(frm);
@@ -956,6 +960,7 @@ load_config(void)
 				break;
 		}
 	}
+	free(line);
 	fclose(config);
 }
 
