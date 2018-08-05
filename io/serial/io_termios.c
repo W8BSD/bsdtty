@@ -401,6 +401,7 @@ int serial_termios_close(struct io_serial_handle *hdl)
 
 	ret = close(thdl->fd);
 	free(thdl);
+	return ret;
 }
 
 int serial_termios_cts(struct io_serial_handle *hdl, bool *val)
