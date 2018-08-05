@@ -54,7 +54,7 @@ static int tx_width;
 static int tx_height;
 static bool reset_tuning;
 static uint64_t last_freq;
-static enum rig_modes last_mode = MODE_UNKNOWN;
+static char last_mode[16] = "";
 
 static bool baudot_char(int ch, const void *ab);
 static void capture_call(int y, int x);
@@ -313,24 +313,22 @@ show_freq(void)
 {
 #ifdef WITH_OUTRIGGER
 	uint64_t freq;
-	enum rig_modes mode;
 	char fstr[32];
 
-	if (rig) {
-		freq = get_frequency(rig, VFO_UNKNOWN) + settings.freq_offset;
-		if (freq) {
-			if (last_freq != freq)
-				mvwaddstr(status, 0, 15, format_freq(freq));
+	freq = get_rig_freq() + settings.freq_offset;
+	if (freq) {
+		if (last_freq != freq) {
+			sprintf(fstr, "%14s", format_freq(freq));
+			mvwaddstr(status, 0, 15, fstr);
 		}
-		mode = get_mode(rig);
-		strcpy(fstr, mode_name(mode));
-		if (last_mode != mode)
-			mvwaddstr(status, 0, 29, fstr);
-		if (last_mode != mode || last_freq != freq)
-			wrefresh(status);
-		last_mode = mode;
-		last_freq = freq;
 	}
+	get_rig_mode(fstr, sizeof(fstr));
+	if (strcmp(fstr, last_mode))
+		mvwaddstr(status, 0, 30, fstr);
+	if (strcmp(fstr, last_mode) || last_freq != freq)
+		wrefresh(status);
+	strcpy(last_mode, fstr);
+	last_freq = freq;
 #endif
 }
 
@@ -473,7 +471,7 @@ teardown_windows(void)
 	delwin(status);
 	delwin(status_title);
 	last_freq = 0;
-	last_mode = MODE_UNKNOWN;
+	last_mode[0] = 0;
 	reset_tuning_aid();
 }
 
@@ -514,7 +512,8 @@ struct field_info {
 		STYPE_BAUDOT,
 		STYPE_DOUBLE,
 		STYPE_INT,
-		STYPE_BOOL
+		STYPE_BOOL,
+		STYPE_UINT16
 	} type;
 	void *ptr;
 } fields[] = {
@@ -656,13 +655,13 @@ struct field_info {
 		.type = STYPE_BAUDOT,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, callsign)
 	},
-#ifdef WITH_OUTRIGGER
 	{
-		.name = "Outrigger PTT",
-		.key = "outriggerptt",
+		.name = "Rig control PTT",
+		.key = "rigctlptt",
 		.type = STYPE_BOOL,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, or_ptt)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, ctl_ptt)
 	},
+#ifdef WITH_OUTRIGGER
 	{
 		.name = "Outrigger rig",
 		.key = "outriggerrig",
@@ -675,13 +674,25 @@ struct field_info {
 		.type = STYPE_STRING,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, or_dev)
 	},
+#endif
 	{
 		.name = "Mark VFO offset",
 		.key = "freqoffset",
 		.type = STYPE_INT,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, freq_offset)
 	},
-#endif
+	{
+		.name = "Rigctld hostname",
+		.key = "rigctldhost",
+		.type = STYPE_STRING,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, rigctld_host)
+	},
+	{
+		.name = "Rigctld port",
+		.key = "rigctldport",
+		.type = STYPE_UINT16,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, rigctld_port)
+	},
 };
 #define NUM_FIELDS (sizeof(fields) / sizeof(fields[0]))
 
@@ -749,6 +760,11 @@ change_settings(void)
 			case STYPE_BOOL:
 				set_field_type(field[i], TYPE_INTEGER, 0, 0, 1);
 				snprintf(cv, sizeof(cv), "%d", *(bool *)fields[i].ptr);
+				set_field_buffer(field[i], 0, cv);
+				break;
+			case STYPE_UINT16:
+				set_field_type(field[i], TYPE_INTEGER, 0, 0, 65535);
+				snprintf(cv, sizeof(cv), "%" PRIu16, *(uint16_t *)fields[i].ptr);
 				set_field_buffer(field[i], 0, cv);
 				break;
 		}
@@ -974,6 +990,9 @@ load_config(void)
 				break;
 			case STYPE_BOOL:
 				*(bool *)fields[field].ptr = strtoi(ch, NULL, 10);
+				break;
+			case STYPE_UINT16:
+				*(uint16_t *)fields[field].ptr = strtoi(ch, NULL, 10);
 				break;
 		}
 	}

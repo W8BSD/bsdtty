@@ -24,13 +24,19 @@
  *
  */
 
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <locale.h>
+#include <netdb.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,18 +49,27 @@
 #include "fsk_demod.h"
 #include "ui.h"
 
+#ifdef WITH_OUTRIGGER
+#include "api/api.h"
+#include "iniparser/src/dictionary.h"
+#endif
+
 static bool do_macro(int fkey, bool *figs);
 static bool do_tx(void);
 static void done(void);
+static bool get_rig_ptt(void);
 static bool get_rts(void);
 static void handle_rx_char(char ch, bool *rxfigs);
 static void input_loop(void);
+static const char *mode_name(enum rig_modes mode);
 static void send_char(const char ch, bool *figs);
 static void send_rtty_char(char ch);
 static void send_string(const char *str, bool *figs);
+static bool set_rig_ptt(bool val);
 static void setup_log(void);
-static void setup_outrigger(void);
+static void setup_rig_control(void);
 static void setup_tty(void);
+static int sock_readln(int sock, char *buf, size_t bufsz);
 static void usage(const char *cmd);
 static void setup_defaults(void);
 
@@ -68,10 +83,9 @@ struct bt_settings settings = {
 	.space_freq = 2295,
 	.charset = 0,
 	.afsk = false,
-#ifdef WITH_OUTRIGGER
-	.or_ptt = false,
-#endif
-	.freq_offset = 170
+	.ctl_ptt = false,
+	.freq_offset = 170,
+	.rigctld_port = 4532
 };
 
 /* UART Stuff */
@@ -87,6 +101,7 @@ static char *their_callsign;
 static char sync_buffer[9];
 static int sb_chars;
 static int sync_squelch = 1;
+int rigctld_socket = -1;
 
 struct charset {
 	const char *chars;
@@ -143,8 +158,8 @@ static struct charset charsets[] = {
 };
 
 #ifdef WITH_OUTRIGGER
-dictionary *or_d;
-struct rig *rig;
+static dictionary *or_d;
+static struct rig *rig;
 #endif
 
 int main(int argc, char **argv)
@@ -154,9 +169,9 @@ int main(int argc, char **argv)
 	load_config();
 
 #ifdef WITH_OUTRIGGER
-	while ((ch = getopt(argc, argv, "ac:C:d:D:f:l:m:n:op:q:Q:r:R:s:t:1:2:3:4:5:6:7:8:9:0:")) != -1) {
+	while ((ch = getopt(argc, argv, "ac:C:d:D:f:l:m:n:p:q:Q:r:R:s:t:T1:2:3:4:5:6:7:8:9:0:")) != -1) {
 #else
-	while ((ch = getopt(argc, argv, "ac:C:d:l:m:n:p:q:Q:r:s:t:1:2:3:4:5:6:7:8:9:0:")) != -1) {
+	while ((ch = getopt(argc, argv, "ac:C:d:f:l:m:n:p:q:Q:r:s:t:T1:2:3:4:5:6:7:8:9:0:")) != -1) {
 #endif
 		while (optarg && isspace(*optarg))
 			optarg++;
@@ -172,11 +187,6 @@ int main(int argc, char **argv)
 				break;
 			case 'a':
 				settings.afsk = true;
-				break;
-			case 'o':
-#ifdef WITH_OUTRIGGER
-				settings.or_ptt = true;
-#endif
 				break;
 			case 'C':
 				settings.callsign = strdup(optarg);
@@ -204,6 +214,9 @@ int main(int argc, char **argv)
 				break;
 			case 's':	// space_freq
 				settings.space_freq = strtod(optarg, NULL);
+				break;
+			case 'T':
+				settings.ctl_ptt = true;
 				break;
 			case 't':	// tty_name
 				settings.tty_name = strdup(optarg);
@@ -255,7 +268,7 @@ int main(int argc, char **argv)
 	display_charset(charsets[settings.charset].name);
 	update_squelch(sync_squelch);
 
-	setup_outrigger();
+	setup_rig_control();
 
 	// Finally, do the thing.
 	input_loop();
@@ -273,7 +286,7 @@ reinit(void)
 	// Set up the log file
 	setup_log();
 
-	setup_outrigger();
+	setup_rig_control();
 }
 
 static void
@@ -298,6 +311,8 @@ setup_defaults(void)
 		settings.macros[3] = strdup("` DE \\\t");
 	if (settings.callsign == NULL)
 		settings.callsign = strdup("W8BSD");
+	if (settings.rigctld_host == NULL)
+		settings.rigctld_host = strdup("localhost");
 #ifdef WITH_OUTRIGGER
 	if (settings.or_rig == NULL)
 		settings.or_rig = strdup("TS-940S");
@@ -622,10 +637,8 @@ send_char(const char ch, bool *figs)
 	int state;
 	char ach;
 	time_t now;
-#ifdef WITH_OUTRIGGER
-	static uint64_t freq;
-	static enum rig_modes mode;
-#endif
+	static uint64_t freq = 0;
+	static char mode[16];
 
 	bch = asc2baudot(ch, *figs);
 	rts = get_rts();
@@ -642,18 +655,11 @@ send_char(const char ch, bool *figs)
 				usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
 			}
 		}
-#ifdef WITH_OUTRIGGER
 		if (rts && rig) {
-			freq = get_frequency(rig, VFO_UNKNOWN) + settings.freq_offset;
-			mode = get_mode(rig);
+			freq = get_rig_freq() + settings.freq_offset;
+			get_rig_mode(mode, sizeof(mode));
 		}
-		if (settings.or_ptt) {
-			set_ptt(rig, rts);
-		}
-		else
-#endif
-		if (ioctl(tty, rts ? TIOCMBIS : TIOCMBIC, &state) != 0)
-			printf_errno("%s RTS bit", rts ? "setting" : "resetting");
+		set_rig_ptt(rts);
 		if (rts) {
 			/* Start with a byte length of mark to help sync... */
 			if (settings.afsk) {
@@ -680,14 +686,10 @@ send_char(const char ch, bool *figs)
 		}
 		now = time(NULL);
 		if (log_file != NULL) {
-#ifdef WITH_OUTRIGGER
-			if (rig == NULL)
-#endif
-			fprintf(log_file, "\n------- %s of transmission (%.24s) -------\n", rts ? "Start" : "End", ctime(&now));
-#ifdef WITH_OUTRIGGER
+			if (freq == 0)
+				fprintf(log_file, "\n------- %s of transmission (%.24s) -------\n", rts ? "Start" : "End", ctime(&now));
 			else
-				fprintf(log_file, "\n------- %s of transmission (%.24s) on %s (%s) -------\n", rts ? "Start" : "End", ctime(&now), format_freq(freq), mode_name(mode));
-#endif
+				fprintf(log_file, "\n------- %s of transmission (%.24s) on %s (%s) -------\n", rts ? "Start" : "End", ctime(&now), format_freq(freq), mode);
 			fflush(log_file);
 		}
 		mark_tx_extent(rts);
@@ -742,10 +744,8 @@ get_rts(void)
 {
 	int state;
 
-#ifdef WITH_OUTRIGGER
-	if (settings.or_ptt)
-		return get_ptt(rig);
-#endif
+	if (settings.ctl_ptt)
+		return get_rig_ptt();
 	if (ioctl(tty, TIOCMGET, &state) == -1)
 		printf_errno("getting RTS state");
 	return !!(state & TIOCM_RTS);
@@ -756,12 +756,15 @@ done(void)
 {
 	int state = 0;
 
+	if (settings.ctl_ptt) {
+		set_rig_ptt(false);
 #ifdef WITH_OUTRIGGER
-	if (settings.or_ptt && rig) {
-		set_ptt(rig, false);
-		close_rig(rig);
-	}
+		if (rig)
+			close_rig(rig);
 #endif
+		if (rigctld_socket != -1)
+			close(rigctld_socket);
+	}
 
 	if (tty != -1) {
 		ioctl(tty, TIOCMGET, &state);
@@ -826,8 +829,8 @@ usage(const char *cmd)
 	       "-c  Charset to use               0\n"
 	       "-a  Use AFSK (no argument)\n"
 	       "-C  Callsign                     \"W8BSD\"\n"
+	       "-T  Use rig control PTT (no argument)\n"
 #ifdef WITH_OUTRIGGER
-	       "-o  Use Outrigger PTT (no argument)\n"
 	       "-R  Outrigger rig name           \"TS-940S\"\n"
 	       "-D  Outrigger port device name   \"/dev/ttyu2\"\n"
 #endif
@@ -859,22 +862,71 @@ captured_callsign(const char *str)
 }
 
 static void
-setup_outrigger(void)
+setup_rig_control(void)
 {
+	struct addrinfo hints = {
+		.ai_family = AF_UNSPEC,
+		.ai_socktype = SOCK_STREAM,
+		.ai_protocol = IPPROTO_TCP,
+		.ai_flags = AI_ADDRCONFIG | AI_NUMERICSERV
+	};
+	struct addrinfo *ai;
+	struct addrinfo *aip;
+	char port[6];
+	int opt;
+
 #ifdef WITH_OUTRIGGER
-	if (or_d)
+	if (or_d) {
 		dictionary_del(or_d);
-	or_d = dictionary_new(0);
-
-	dictionary_set(or_d, "rig:rig", settings.or_rig);
-	dictionary_set(or_d, "rig:port", settings.or_dev);
-
-	if (rig)
+		or_d = NULL;
+	}
+	if (rig) {
 		close_rig(rig);
-	rig = init_rig(or_d, "rig");
-	if (settings.or_ptt && rig == NULL)
-		printf_errno("unable to control rig");
+		rig = NULL;
+	}
+	if (settings.or_rig && settings.or_rig[0] &&
+	    settings.or_dev && settings.or_dev[0]) {
+		if (or_d)
+			dictionary_del(or_d);
+		or_d = dictionary_new(0);
+
+		dictionary_set(or_d, "rig:rig", settings.or_rig);
+		dictionary_set(or_d, "rig:port", settings.or_dev);
+
+		if (rig)
+			close_rig(rig);
+		rig = init_rig(or_d, "rig");
+		if (settings.ctl_ptt && rig == NULL)
+			printf_errno("unable to control rig");
+		if (rig != NULL)
+			return;
+	}
 #endif
+	if (rigctld_socket != -1) {
+		close(rigctld_socket);
+		rigctld_socket = -1;
+	}
+	if (settings.rigctld_host && settings.rigctld_host[0] &&
+	    settings.rigctld_port) {
+		sprintf(port, "%hu", settings.rigctld_port);
+		if (getaddrinfo(settings.rigctld_host, port, &hints, &ai) != 0)
+			return;
+		for (aip = ai; aip != NULL; aip = aip->ai_next) {
+			rigctld_socket = socket(aip->ai_family, aip->ai_socktype, aip->ai_protocol);
+			if (rigctld_socket == -1)
+				continue;
+			if (connect(rigctld_socket, aip->ai_addr, aip->ai_addrlen) == 0) {
+				opt = 1;
+				setsockopt(rigctld_socket, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+				break;
+			}
+			close(rigctld_socket);
+			rigctld_socket = -1;
+		}
+		if (settings.ctl_ptt && rigctld_socket == -1)
+			printf_errno("unable to connect to rigctld");
+		freeaddrinfo(ai);
+	}
 }
 
 void
@@ -900,13 +952,14 @@ fix_config(void)
 		settings.charset = 0;
 	if (settings.charset > sizeof(charsets) / sizeof(charsets[0]))
 		settings.charset = 0;
-	if (settings.or_rig == NULL || *settings.or_rig == 0)
-		settings.or_ptt = false;
+	if ((settings.or_rig == NULL || *settings.or_rig == 0 || settings.or_dev == NULL || *settings.or_dev == 0) &&
+	    (settings.rigctld_host == NULL || settings.rigctld_host[0] == 0 || settings.rigctld_port == 0))
+		settings.ctl_ptt = false;
 	if (settings.or_dev == NULL || *settings.or_dev == 0)
-		settings.or_ptt = false;
+		settings.ctl_ptt = false;
 }
 
-const char *
+static const char *
 mode_name(enum rig_modes mode)
 {
 	switch(mode) {
@@ -966,6 +1019,148 @@ format_freq(uint64_t freq)
 	*(ch++) = prefix[pc];
 	*(ch++) = 'H';
 	*(ch++) = 'z';
+	*ch = 0;
 
 	return fstr;
+}
+
+static int
+sock_readln(int sock, char *buf, size_t bufsz)
+{
+	fd_set rd;
+	int i;
+	int ret;
+	struct timeval tv = {
+		.tv_sec = 0,
+		.tv_usec = 500000
+	};
+
+	for (i = 0; i < bufsz - 1; i++) {
+		FD_ZERO(&rd);
+		FD_SET(sock, &rd);
+		switch(select(sock+1, &rd, NULL, NULL, &tv)) {
+			case -1:
+				return -1;
+			case 0:
+				return -1;
+			case 1:
+				ret = recv(sock, buf + i, 1, MSG_WAITALL);
+				if (ret == -1)
+					return -1;
+				if (buf[i] == '\n')
+					goto done;
+				break;
+		}
+	}
+done:
+	buf[i] = 0;
+	while (i > 0 && buf[i-1] == '\n')
+		buf[--i] = 0;
+	return i;
+}
+
+uint64_t
+get_rig_freq(void)
+{
+	uint64_t ret;
+	char buf[1024];
+
+	if (rig)
+		return get_frequency(rig, VFO_UNKNOWN);
+	if (rigctld_socket != -1) {
+		if (send(rigctld_socket, "f\n", 2, 0) != 2)
+			goto next;
+		if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0) {
+			close(rigctld_socket);
+			rigctld_socket = -1;
+			goto next;
+		}
+		if (sscanf(buf, "%" SCNu64, &ret) == 1)
+			return ret;
+	}
+next:
+
+	return 0;
+}
+
+const char *
+get_rig_mode(char *buf, size_t sz)
+{
+	char tbuf[1024];
+
+	if (rig) {
+		snprintf(buf, sz, "%s", mode_name(get_mode(rig)));
+		return buf;
+	}
+
+	if (rigctld_socket != -1) {
+		if (send(rigctld_socket, "m\n", 2, 0) != 2)
+			goto next;
+		if (sock_readln(rigctld_socket, buf, sz) <= 0) {
+			close(rigctld_socket);
+			rigctld_socket = -1;
+			goto next;
+		}
+		if (sock_readln(rigctld_socket, tbuf, sz) <= 0) {
+			close(rigctld_socket);
+			rigctld_socket = -1;
+			goto next;
+		}
+		return buf;
+	}
+next:
+	if (sz >= 1)
+		buf[0] = 0;
+	return NULL;
+}
+
+static bool
+get_rig_ptt(void)
+{
+	char buf[1024];
+	int state;
+
+	if (rig)
+		return get_rig_ptt();
+
+	if (rigctld_socket != -1) {
+		if (send(rigctld_socket, "t\n", 2, 0) != 2)
+			goto next;
+		if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0) {
+			close(rigctld_socket);
+			rigctld_socket = -1;
+		}
+		if (buf[0] == '1')
+			return true;
+		return false;
+	}
+next:
+
+	if (ioctl(tty, TIOCMGET, &state) == -1)
+		printf_errno("getting RTS state");
+	return !!(state & TIOCM_RTS);
+}
+
+static bool
+set_rig_ptt(bool val)
+{
+	char buf[1024];
+	if (rig)
+		return set_rig_ptt(val);
+
+	if (rigctld_socket != -1) {
+		sprintf(buf, "T %d", val);
+		if (send(rigctld_socket, buf, strlen(buf), 0) != strlen(buf))
+			goto next;
+		if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0) {
+			close(rigctld_socket);
+			rigctld_socket = -1;
+		}
+		if (strcmp(buf, "RPRT 0") == 0)
+			return true;
+		return false;
+	}
+next:
+
+	return false;
 }
