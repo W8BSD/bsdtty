@@ -845,7 +845,7 @@ done:
 	touchwin(rx);
 	touchwin(tx_title);
 	touchwin(tx);
-	curs_set(1);
+	curs_set(0);
 	wrefresh(status_title);
 	wrefresh(status);
 	wrefresh(rx_title);
