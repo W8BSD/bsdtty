@@ -41,7 +41,17 @@ shift changes, as a result, right-clicking in a "word" which contains both
 FIGS and LTRS is irreversable.  Also, it won't shift in a beep character,
 leaving it as the letter.
 
-Sending a macro which starts with "CQ CQ" will clear the RX window.
+Sending a macro which starts with "CQ CQ" or ends with " CQ" will clear the
+RX window.
+
+Special characters can be used in macros:
+
+| Character | Meaning         |
+| --------- | --------------- |
+| \         | Your callsign   |
+| `         | Their callsign  |
+| [         | Carriage return |
+| ]         | Line feed       |
 
 Outstanding issues:
 * I should idle with LTRS, not a mark signal... super tricky.

@@ -620,11 +620,20 @@ do_macro(int fkey, bool *figs)
 			case '`':
 				send_string(their_callsign, figs);
 				break;
+			case '[':
+				send_char("\r", figs);
+				break;
+			case ']':
+				send_char("\n", figs);
+				break;
 			default:
 				send_char(settings.macros[m][i], figs);
 				break;
 		}
 	}
+	if (len > 2)
+		if (strcasecmp(settings.macros[m] + len - 3, " CQ") == 0)
+			clear_rx_window();
 	return true;
 }
 
