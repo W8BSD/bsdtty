@@ -259,7 +259,7 @@ get_input(void)
 			getmouse(&ev);
 			if (ev.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED))
 				toggle_figs(ev.y, ev.x);
-			if (ev.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))
+			else if (ev.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))
 				capture_call(ev.y, ev.x);
 			return 0;
 		default:
