@@ -446,6 +446,7 @@ input_loop(void)
 			rxstate = get_rtty_ch(rxstate);
 			if (rxstate < 0) {
 				sb_chars = 0;
+				rxfigs = false;
 				continue;
 			}
 			if (rxstate > 0x20)
@@ -645,6 +646,13 @@ send_char(const char ch, bool *figs)
 		if (ioctl(tty, rts ? TIOCMBIS : TIOCMBIC, &state) != 0)
 			printf_errno("%s RTS bit", rts ? "setting" : "resetting");
 		if (rts) {
+			/* Start with a stop bit to help sync... */
+			if (settings.afsk)
+				send_afsk_bit(AFSK_STOP);
+			else {
+				/* Hold it in mark for 1.5 bit times. */
+				usleep(((1/((double)settings.baud_numerator / settings.baud_denominator)))*1500000);
+			}
 			*figs = false;
 			/*
 			 * Per ITU-T S.1, the FIRST symbol should be a

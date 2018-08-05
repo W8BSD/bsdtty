@@ -141,7 +141,6 @@ static int next(int val, int max);
 static int prev(int val, int max);
 #endif
 static void read_audio(void);
-static void send_afsk_bit(enum afsk_bit bit);
 static void send_afsk_buf(struct afsk_buf *buf);
 static void setup_audio(void);
 static struct fir_filter * create_matched_filter(double frequency);
@@ -868,7 +867,7 @@ generate_afsk_samples(void)
 	adjust_wave(&space_to_zero, 0.0);
 }
 
-static void
+void
 send_afsk_bit(enum afsk_bit bit)
 {
 	switch(bit) {
@@ -907,7 +906,9 @@ send_afsk_bit(enum afsk_bit bit)
 		case AFSK_STOP:
 			switch(last_afsk_bit) {
 				case AFSK_UNKNOWN:
-					printf_errno("stop after unknown");
+					send_afsk_buf(&zero_to_mark);
+					send_afsk_buf(&mark_to_mark);
+					send_afsk_buf(&mark_to_mark);
 					break;
 				case AFSK_SPACE:
 					send_afsk_buf(&space_to_zero);
