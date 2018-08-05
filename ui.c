@@ -369,6 +369,8 @@ printf_errno(const char *format, ...)
 		msg = NULL;
 	va_end(ap);
 	printf("%s (%s)\n", strerror(eno), msg ? msg : "");
+	if (msg)
+		free(msg);
 	exit(EXIT_FAILURE);
 }
 
@@ -483,6 +485,8 @@ w_printf(WINDOW *win, const char *format, ...)
 		msg = NULL;
 	va_end(ap);
 	waddstr(win, msg);
+	if (msg)
+		free(msg);
 	wrefresh(win);
 }
 
@@ -803,6 +807,7 @@ done:
 		config = fopen(fname, "w");
 		if (config == NULL)
 			printf_errno("error opening \"%s\"", fname);
+		free(fname);
 		for (i = 0; i < NUM_FIELDS; i++) {
 			switch(fields[i].type) {
 				case STYPE_BAUDOT:
@@ -922,6 +927,7 @@ load_config(void)
 	if (asprintf(&fname, "%s/.bsdtty", getenv("HOME")) < 0)
 		printf_errno("unable to create filename");
 	config = fopen(fname, "r");
+	free(fname);
 	if (config == NULL)
 		return;
 	while (getline(&line, &lcapp, config) != -1) {
