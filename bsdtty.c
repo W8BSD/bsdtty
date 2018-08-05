@@ -102,6 +102,7 @@ static char sync_buffer[9];
 static int sb_chars;
 static int sync_squelch = 1;
 int rigctld_socket = -1;
+unsigned serial;
 
 struct charset {
 	const char *chars;
@@ -621,10 +622,10 @@ do_macro(int fkey, bool *figs)
 				send_string(their_callsign, figs);
 				break;
 			case '[':
-				send_char("\r", figs);
+				send_char('\r', figs);
 				break;
 			case ']':
-				send_char("\n", figs);
+				send_char('\n', figs);
 				break;
 			default:
 				send_char(settings.macros[m][i], figs);
