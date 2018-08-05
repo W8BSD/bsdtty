@@ -29,6 +29,7 @@ struct bt_settings {
 	char	*or_rig;
 	char	*or_dev;
 #endif
+	int	freq_offset;
 };
 
 extern struct bt_settings settings;

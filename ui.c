@@ -317,7 +317,7 @@ show_freq(void)
 	char fstr[32];
 
 	if (rig) {
-		freq = get_frequency(rig, VFO_UNKNOWN);
+		freq = get_frequency(rig, VFO_UNKNOWN) + settings.freq_offset;
 		if (freq) {
 			if (last_freq != freq)
 				mvwaddstr(status, 0, 15, format_freq(freq));
@@ -675,6 +675,12 @@ struct field_info {
 		.type = STYPE_STRING,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, or_dev)
 	},
+	{
+		.name = "Mark VFO offset",
+		.key = "freqoffset",
+		.type = STYPE_INT,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, freq_offset)
+	},
 #endif
 };
 #define NUM_FIELDS (sizeof(fields) / sizeof(fields[0]))
@@ -694,6 +700,7 @@ change_settings(void)
 	char *bd;
 
 	baudot = new_fieldtype(NULL, baudot_char);
+	curs_set(1);
 	clear();
 	refresh();
 	for (i = 0; i < NUM_FIELDS; i++) {
@@ -838,6 +845,7 @@ done:
 	touchwin(rx);
 	touchwin(tx_title);
 	touchwin(tx);
+	curs_set(1);
 	wrefresh(status_title);
 	wrefresh(status);
 	wrefresh(rx_title);

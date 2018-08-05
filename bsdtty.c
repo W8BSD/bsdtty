@@ -69,8 +69,9 @@ struct bt_settings settings = {
 	.charset = 0,
 	.afsk = false,
 #ifdef WITH_OUTRIGGER
-	.or_ptt = false
+	.or_ptt = false,
 #endif
+	.freq_offset = 170
 };
 
 /* UART Stuff */
@@ -633,7 +634,7 @@ send_char(const char ch, bool *figs)
 		}
 #ifdef WITH_OUTRIGGER
 		if (rts && rig) {
-			freq = get_frequency(rig, VFO_UNKNOWN);
+			freq = get_frequency(rig, VFO_UNKNOWN) + settings.freq_offset;
 			mode = get_mode(rig);
 		}
 		if (settings.or_ptt) {
