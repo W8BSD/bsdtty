@@ -823,10 +823,10 @@ static void
 adjust_wave(struct afsk_buf *buf, double start_phase)
 {
 	size_t i;
-	double phase_step = (M_PI / 2) / buf->size;
+	double phase_step = (M_PI) / buf->size;
 
 	for (i = 0; i < buf->size; i++) {
-		buf->buf[i * dsp_channels] *= sin(start_phase);
+		buf->buf[i * dsp_channels] *= (cos(start_phase) + 1) / 2;
 		start_phase += phase_step;
 	}
 }
@@ -862,10 +862,10 @@ generate_afsk_samples(void)
 	generate_sine(settings.space_freq, &space_to_zero);
 	generate_sine(settings.space_freq, &space_to_space);
 
-	adjust_wave(&zero_to_mark, 0.0);
-	adjust_wave(&mark_to_zero, M_PI / 2);
-	adjust_wave(&zero_to_space, 0.0);
-	adjust_wave(&space_to_zero, M_PI / 2);
+	adjust_wave(&zero_to_mark, M_PI);
+	adjust_wave(&mark_to_zero, 0.0);
+	adjust_wave(&zero_to_space, M_PI);
+	adjust_wave(&space_to_zero, 0.0);
 }
 
 static void
@@ -875,9 +875,7 @@ send_afsk_bit(enum afsk_bit bit)
 		case AFSK_MARK:
 			switch(last_afsk_bit) {
 				case AFSK_UNKNOWN:
-					send_afsk_buf(&zero_to_mark);
-					send_afsk_buf(&mark_to_mark);
-					break;
+					printf_errno("mark after unknown");
 				case AFSK_SPACE:
 					send_afsk_buf(&space_to_zero);
 					send_afsk_buf(&zero_to_mark);
@@ -894,7 +892,6 @@ send_afsk_bit(enum afsk_bit bit)
 			switch(last_afsk_bit) {
 				case AFSK_UNKNOWN:
 					send_afsk_buf(&zero_to_space);
-					send_afsk_buf(&space_to_space);
 					break;
 				case AFSK_SPACE:
 					send_afsk_buf(&space_to_space);
@@ -965,9 +962,10 @@ end_afsk_tx(void)
 {
 	switch(last_afsk_bit) {
 		case AFSK_UNKNOWN:
+			printf_errno("ending after unknown bit");
 			break;
 		case AFSK_SPACE:
-			send_afsk_buf(&space_to_zero);
+			printf_errno("ending after space");
 			break;
 		case AFSK_STOP:
 		case AFSK_MARK:
