@@ -126,7 +126,9 @@ enum afsk_bit last_afsk_bit = AFSK_UNKNOWN;
 static int avail(int head, int tail, int max);
 static double bq_filter(double value, struct bq_filter *filter);
 static struct bq_filter * calc_apf_coef(double f0, double q);
+#ifndef MATCHED_FILTERS
 static struct bq_filter * calc_bpf_coef(double f0, double q);
+#endif
 static struct bq_filter * calc_lpf_coef(double f0, double q);
 static void create_filters(void);
 static double current_value(void);
@@ -135,7 +137,9 @@ static void free_fir_filter(struct fir_filter *f);
 static bool get_bit(void);
 static bool get_stop_bit(void);
 static int next(int val, int max);
+#if 0 // suppress warning
 static int prev(int val, int max);
+#endif
 static void read_audio(void);
 static void send_afsk_bit(enum afsk_bit bit);
 static void send_afsk_buf(struct afsk_buf *buf);
@@ -572,6 +576,7 @@ calc_lpf_coef(double f0, double q)
 	return ret;
 }
 
+#ifndef MATCHED_FILTERS
 static struct bq_filter *
 calc_bpf_coef(double f0, double q)
 {
@@ -606,6 +611,7 @@ calc_bpf_coef(double f0, double q)
 
 	return ret;
 }
+#endif
 
 static struct bq_filter *
 calc_apf_coef(double f0, double q)
@@ -725,6 +731,7 @@ avail(int head, int tail, int max)
 	return (max - head) + tail;
 }
 
+#if 0 // suppress warning
 static int
 prev(int val, int max)
 {
@@ -732,6 +739,7 @@ prev(int val, int max)
 		val = max;
 	return val;
 }
+#endif
 
 static int
 next(int val, int max)
