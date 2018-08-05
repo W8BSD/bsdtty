@@ -286,7 +286,7 @@ int io_end(struct io_handle *hdl)
 	semaphore_destroy(&hdl->response_semaphore);
 	semaphore_destroy(&hdl->ack_semaphore);
 	if (hdl->response)
-		free(hdl_response);
+		free(hdl->response);
 	switch(hdl->type) {
 		case IO_H_SERIAL:
 			serial_close(hdl->handle.serial);
