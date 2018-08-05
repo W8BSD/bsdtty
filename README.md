@@ -45,3 +45,4 @@ Outstanding issues:
 * I should idle with LTRS, not a mark signal... super tricky.
 * Really needs a manpage.
 * Add CQRLOG integration.
+
