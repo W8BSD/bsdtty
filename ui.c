@@ -57,9 +57,10 @@ static uint64_t last_freq;
 static char last_mode[16] = "";
 
 static bool baudot_char(int ch, const void *ab);
+static bool baudot_macro_char(int ch, const void *ab);
 static void capture_call(int y, int x);
 static void do_endwin(void);
-static char *escape_config(char *str);
+static char *escape_config(char *str, bool macro);
 static int find_field(const char *key);
 static bool get_figs(chtype ch);
 static void setup_windows(void);
@@ -67,7 +68,7 @@ static char *strip_spaces(char *str);
 static void teardown_windows(void);
 static void toggle_figs(int y, int x);
 static void w_printf(WINDOW *win, const char *format, ...);
-static char *unescape_config(char *str);
+static char *unescape_config(char *str, bool macro);
 
 void
 setup_curses(void)
@@ -255,6 +256,10 @@ get_input(void)
 			return RTTY_KEY_LEFT;
 		case KEY_RIGHT:
 			return RTTY_KEY_RIGHT;
+		case KEY_UP:
+			return RTTY_KEY_UP;
+		case KEY_DOWN:
+			return RTTY_KEY_DOWN;
 		case KEY_MOUSE:
 			getmouse(&ev);
 			if (ev.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED))
@@ -263,6 +268,8 @@ get_input(void)
 				capture_call(ev.y, ev.x);
 			return 0;
 		default:
+			if (ret >= KEY_MIN && ret <= KEY_MAX)
+				return 0;
 			return ret;
 	}
 }
@@ -510,6 +517,7 @@ struct field_info {
 	enum field_type {
 		STYPE_STRING,
 		STYPE_BAUDOT,
+		STYPE_MACRO,
 		STYPE_DOUBLE,
 		STYPE_INT,
 		STYPE_BOOL,
@@ -580,61 +588,61 @@ struct field_info {
 	{
 		.name = "F1 macro",
 		.key = "f1",
-		.type = STYPE_BAUDOT,
+		.type = STYPE_MACRO,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 0
 	},
 	{
 		.name = "F2 macro",
 		.key = "f2",
-		.type = STYPE_BAUDOT,
+		.type = STYPE_MACRO,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 1
 	},
 	{
 		.name = "F3 macro",
 		.key = "f3",
-		.type = STYPE_BAUDOT,
+		.type = STYPE_MACRO,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 2
 	},
 	{
 		.name = "F4 macro",
 		.key = "f4",
-		.type = STYPE_BAUDOT,
+		.type = STYPE_MACRO,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 3
 	},
 	{
 		.name = "F5 macro",
 		.key = "f5",
-		.type = STYPE_BAUDOT,
+		.type = STYPE_MACRO,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 4
 	},
 	{
 		.name = "F6 macro",
 		.key = "f6",
-		.type = STYPE_BAUDOT,
+		.type = STYPE_MACRO,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 5
 	},
 	{
 		.name = "F7 macro",
 		.key = "f7",
-		.type = STYPE_BAUDOT,
+		.type = STYPE_MACRO,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 6
 	},
 	{
 		.name = "F8 macro",
 		.key = "f8",
-		.type = STYPE_BAUDOT,
+		.type = STYPE_MACRO,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 7
 	},
 	{
 		.name = "F9 macro",
 		.key = "f9",
-		.type = STYPE_BAUDOT,
+		.type = STYPE_MACRO,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 8
 	},
 	{
 		.name = "F10 macro",
 		.key = "f10",
-		.type = STYPE_BAUDOT,
+		.type = STYPE_MACRO,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 9
 	},
 	{
@@ -706,16 +714,18 @@ change_settings(void)
 	char cv[20];
 	size_t end;
 	FIELDTYPE *baudot;
+	FIELDTYPE *baudot_macro;
 	FILE *config;
 	char *fname;
 	char *bd;
 
 	baudot = new_fieldtype(NULL, baudot_char);
+	baudot_macro = new_fieldtype(NULL, baudot_macro_char);
 	curs_set(1);
 	clear();
 	refresh();
 	for (i = 0; i < NUM_FIELDS; i++) {
-		field[i] = new_field(1, (fields[i].type == STYPE_STRING || fields[i].type == STYPE_BAUDOT) ? tx_width - 26 : 20, 1+i, 20, 0, 0);
+		field[i] = new_field(1, (fields[i].type == STYPE_STRING || fields[i].type == STYPE_BAUDOT || fields[i].type == STYPE_MACRO) ? tx_width - 26 : 20, 1+i, 20, 0, 0);
 		set_field_back(field[i], A_UNDERLINE);
 		field_opts_off(field[i], O_AUTOSKIP);
 		switch (fields[i].type) {
@@ -735,7 +745,22 @@ change_settings(void)
 					bd = strdup(*(char **)fields[i].ptr);
 					if (bd == NULL)
 						printf_errno("strup()ing baudot string");
-					escape_config(bd);
+					escape_config(bd, false);
+					set_field_buffer(field[i], 0, bd);
+					free(bd);
+				}
+				else
+					set_field_buffer(field[i], 0, "");
+				break;
+			case STYPE_MACRO:
+				set_field_type(field[i], baudot_macro, 0, 1, 0);
+				cv[0] = 0;
+				field_opts_off(field[i], O_STATIC);
+				if (*(char **)fields[i].ptr) {
+					bd = strdup(*(char **)fields[i].ptr);
+					if (bd == NULL)
+						printf_errno("strup()ing baudot string");
+					escape_config(bd, true);
 					set_field_buffer(field[i], 0, bd);
 					free(bd);
 				}
@@ -786,6 +811,7 @@ change_settings(void)
 				goto done;
 			case '\r':
 			case KEY_ENTER:
+				form_driver(frm, REQ_NEXT_FIELD);
 				goto done;
 			case KEY_DOWN:
 				form_driver(frm, REQ_NEXT_FIELD);
@@ -825,7 +851,6 @@ done:
 	unpost_form(frm);
 
 	if (ch == '\r' || ch == KEY_ENTER) {
-		fix_config();
 		if (!getenv("HOME"))
 			printf_errno("HOME not set");
 		if (asprintf(&fname, "%s/.bsdtty", getenv("HOME")) < 0)
@@ -837,7 +862,10 @@ done:
 		for (i = 0; i < NUM_FIELDS; i++) {
 			switch(fields[i].type) {
 				case STYPE_BAUDOT:
-					fprintf(config, "%s=%s\n", fields[i].key, escape_config(unescape_config(field_buffer(field[i], 0))));
+					fprintf(config, "%s=%s\n", fields[i].key, escape_config(unescape_config(field_buffer(field[i], 0), false), false));
+					break;
+				case STYPE_MACRO:
+					fprintf(config, "%s=%s\n", fields[i].key, escape_config(unescape_config(field_buffer(field[i], 0), true), true));
 					break;
 				default:
 					fprintf(config, "%s=%s\n", fields[i].key, strip_spaces(field_buffer(field[i], 0)));
@@ -854,6 +882,7 @@ done:
 		free_field(field[i]);
 	}
 	free_fieldtype(baudot);
+	free_fieldtype(baudot_macro);
 
 	touchwin(status_title);
 	touchwin(status);
@@ -882,6 +911,25 @@ baudot_char(int ch, const void *ab)
 	return false;
 }
 
+static bool
+baudot_macro_char(int ch, const void *ab)
+{
+	if (asc2baudot(ch, false))
+		return true;
+	switch (ch) {
+		case '~':
+		case '_':
+		case '\\':
+		case '`':
+		case '[':
+		case ']':
+		case '^':
+		case '%':
+			return true;
+	}
+	return false;
+}
+
 static char *
 strip_spaces(char *str)
 {
@@ -893,7 +941,7 @@ strip_spaces(char *str)
 }
 
 static char *
-escape_config(char *str)
+escape_config(char *str, bool macro)
 {
 	char *ch;
 
@@ -915,13 +963,11 @@ escape_config(char *str)
 }
 
 static char *
-unescape_config(char *str)
+unescape_config(char *str, bool macro)
 {
 	char *ch;
 
 	strip_spaces(str);
-	for (ch = strchr(str, 0) - 1; ch >= str && *ch == ' '; ch--)
-		*ch = 0;
 
 	for (ch = str; *ch; ch++) {
 		*ch = toupper(*ch);
@@ -980,7 +1026,13 @@ load_config(void)
 				if (*(char **)fields[field].ptr)
 					free(*(char **)fields[field].ptr);
 				*(char **)fields[field].ptr = strdup(ch);
-				unescape_config(*(char **)fields[field].ptr);
+				unescape_config(*(char **)fields[field].ptr, false);
+				break;
+			case STYPE_MACRO:
+				if (*(char **)fields[field].ptr)
+					free(*(char **)fields[field].ptr);
+				*(char **)fields[field].ptr = strdup(ch);
+				unescape_config(*(char **)fields[field].ptr, true);
 				break;
 			case STYPE_DOUBLE:
 				*(double *)fields[field].ptr = strtod(ch, NULL);
@@ -1027,7 +1079,7 @@ void
 audio_meter(int16_t envelope)
 {
 	int i = 0;
-	int sz = tx_width - 58;
+	int sz = tx_width - 66;
 	int blocks;
 
 	if (sz < 1)
@@ -1035,7 +1087,7 @@ audio_meter(int16_t envelope)
 	blocks = envelope / (INT16_MAX / (sz * 3));
 	if (blocks > (sz * 3))
 		blocks = (sz * 3);
-	wmove(status, 0, 58);
+	wmove(status, 0, 66);
 	wclrtoeol(status);
 	wcolor_set(status, 1, NULL);
 	wattron(status, A_BOLD);
@@ -1146,6 +1198,8 @@ update_captured_call(const char *call)
 {
 	char captured[15];
 
+	if (call == NULL)
+		return;
 	sprintf(captured, "%-15s", call);
 	mvwaddstr(status, 0, 35, captured);
 	wrefresh(status);
@@ -1224,5 +1278,15 @@ update_squelch(int level)
 		return;
 	sprintf(buf, "SQL %d", level);
 	mvwaddstr(status, 0, 51, buf);
+	wrefresh(status);
+}
+
+void
+update_serial(unsigned value)
+{
+	char buf[11];
+
+	sprintf(buf, "%03u", value);
+	mvwaddstr(status, 0, 58, buf);
 	wrefresh(status);
 }

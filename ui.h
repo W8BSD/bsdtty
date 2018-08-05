@@ -11,6 +11,8 @@
 #define RTTY_KEY_LEFT		0x0101
 #define RTTY_KEY_RIGHT		0x0102
 #define RTTY_KEY_REFRESH	0x0103
+#define RTTY_KEY_UP		0x0104
+#define RTTY_KEY_DOWN		0x0105
 
 void setup_curses(void);
 void update_tuning_aid(double mark, double space);
@@ -29,5 +31,6 @@ void reset_tuning_aid(void);
 void clear_rx_window(void);
 void update_squelch(int level);
 void update_captured_call(const char *call);
+void update_serial(unsigned value);
 
 #endif

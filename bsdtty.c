@@ -268,6 +268,7 @@ int main(int argc, char **argv)
 
 	display_charset(charsets[settings.charset].name);
 	update_squelch(sync_squelch);
+	update_serial(serial);
 
 	setup_rig_control();
 
@@ -279,6 +280,9 @@ int main(int argc, char **argv)
 void
 reinit(void)
 {
+	load_config();
+	fix_config();
+
 	setup_tty();
 
 	// Set up the FSK stuff.
@@ -551,11 +555,21 @@ do_tx(void)
 					sync_squelch = 9;
 				update_squelch(sync_squelch);
 				break;
+			case RTTY_KEY_UP:
+				serial++;
+				update_serial(serial);
+				break;
+			case RTTY_KEY_DOWN:
+				if (serial)
+					serial--;
+				update_serial(serial);
+				break;
 			case RTTY_KEY_REFRESH:
 				display_charset(charsets[settings.charset].name);
 				update_squelch(sync_squelch);
 				show_reverse(reverse);
 				update_captured_call(their_callsign);
+				update_serial(serial);
 				break;
 			case '`':
 				toggle_reverse(&reverse);
@@ -606,6 +620,7 @@ do_macro(int fkey, bool *figs)
 	size_t len;
 	size_t i;
 	int m;
+	char buf[11];
 
 	m = fkey - 1;
 	if (settings.macros[m] == NULL)
@@ -626,6 +641,14 @@ do_macro(int fkey, bool *figs)
 				break;
 			case ']':
 				send_char('\n', figs);
+				break;
+			case '^':
+				serial++;
+				/* Fall-through */
+			case '%':
+				sprintf(buf, "%d", serial);
+				send_string(buf, figs);
+				update_serial(serial);
 				break;
 			default:
 				send_char(settings.macros[m][i], figs);
@@ -1048,6 +1071,8 @@ sock_readln(int sock, char *buf, size_t bufsz)
 		FD_SET(sock, &rd);
 		switch(select(sock+1, &rd, NULL, NULL, &tv)) {
 			case -1:
+				if (errno == EINTR)
+					continue;
 				return -1;
 			case 0:
 				return -1;
@@ -1165,26 +1190,38 @@ set_rig_ptt(bool val)
 {
 	char buf[1024];
 	int state = TIOCM_RTS;
+	int ret = true;
+	int i;
 
 	if (settings.ctl_ptt) {
 		if (rig)
-			return set_ptt(rig, val);
-
-		if (rigctld_socket != -1) {
-			sprintf(buf, "T %d\n", val);
-			if (send(rigctld_socket, buf, strlen(buf), 0) != strlen(buf))
-				goto next;
-			if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0) {
-				close(rigctld_socket);
-				rigctld_socket = -1;
-				if (settings.ctl_ptt)
-					printf_errno("lost connection setting rig PTT");
-				goto next;
+			ret = set_ptt(rig, val);
+		else {
+			if (rigctld_socket != -1) {
+				sprintf(buf, "T %d\n", val);
+				if (send(rigctld_socket, buf, strlen(buf), 0) != strlen(buf))
+					goto next;
+				if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0) {
+					close(rigctld_socket);
+					rigctld_socket = -1;
+					if (settings.ctl_ptt)
+						printf_errno("lost connection setting rig PTT");
+					goto next;
+				}
+				if (strcmp(buf, "RPRT 0") == 0)
+					ret = true;
+				else
+					ret = false;
 			}
-			if (strcmp(buf, "RPRT 0") == 0)
-				return true;
-			return false;
 		}
+		if (ret) {
+			for (i = 0; i < 200; i++) {
+				if (get_rig_ptt() == val)
+					break;
+				usleep(10000);
+			}
+		}
+		return ret;
 	}
 next:
 

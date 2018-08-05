@@ -52,6 +52,10 @@ Special characters can be used in macros:
 | `         | Their callsign  |
 | [         | Carriage return |
 | ]         | Line feed       |
+| ~         | Tab (toggle TX) |
+| _         | Trailing space  |
+
+The trailing space is only valid at the end of the macro.
 
 Outstanding issues:
 * I should idle with LTRS, not a mark signal... super tricky.
