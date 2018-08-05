@@ -20,24 +20,24 @@ There's also an ASCII "crossed bananas" tuning aid.
 
 Controls:
 
-| Keystroke | Action                                                |
-| --------- | ----------------------------------------------------- |
-| TAB       | Toggles TX                                            |
-| `         | Toggles Reverse RX                                    |
-| [         | Previous character set                                |
-| ]         | Next character set                                    |
-| Backspace | Configuration editor (ENTER to save, CTRL-C to abort) |
-| \         | Rescales the tuning aid display                       |
-| CTRL-C    | Exit                                                  |
-| CTRL-L    | Clear RX window                                       |
-
-Clicking in the RX window will save the clicked callsign for use in macros.
-It is also displayed in the status bar.
+| Control     | Action                                                 |
+| ----------- | ------------------------------------------------------ |
+| TAB         | Toggles TX                                             |
+| `           | Toggles Reverse RX                                     |
+| [           | Previous character set                                 |
+| ]           | Next character set                                     |
+| Backspace   | Configuration editor (ENTER to save, CTRL-C to abort)  |
+| \           | Rescales the tuning aid display                        |
+| CTRL-C      | Exit                                                   |
+| CTRL-L      | Clear RX window                                        |
+| Left-click  | Select callsing from RX window                         |
+| Right-click | Toggle LTRS/FIGS shift on the clicked word (see below) | 
 
 Right-clicking in the RX window will toggle the FIGS shift.  While
 right-clicking again will reverse it again, the extents are whitespace and
 shift changes, as a result, right-clicking in a "word" which contains both
-FIGS and LTRS is irreversable.
+FIGS and LTRS is irreversable.  Also, it won't shift in a beep character,
+leaving it as the letter.
 
 Sending a macro which starts with "CQ CQ" will clear the RX window.
 
