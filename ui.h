@@ -8,6 +8,9 @@
 #define RTTY_IS_FKEY(x)		((x & RTTY_FUNC_KEY) == RTTY_FUNC_KEY)
 #define RTTY_FKEY(x)		(RTTY_FUNC_KEY | x)
 #define RTTY_FKEY_VAL(x)	(x & RTTY_FUNC_KEY_MASK)
+#define RTTY_KEY_LEFT		0x0101
+#define RTTY_KEY_RIGHT		0x0102
+#define RTTY_KEY_REFRESH	0x0103
 
 void setup_curses(void);
 void update_tuning_aid(double mark, double space);
@@ -24,5 +27,7 @@ void display_charset(const char *name);
 void audio_meter(int16_t envelope);
 void reset_tuning_aid(void);
 void clear_rx_window(void);
+void update_squelch(int level);
+void update_captured_call(const char *call);
 
 #endif

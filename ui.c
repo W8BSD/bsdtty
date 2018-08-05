@@ -55,7 +55,6 @@ static int tx_height;
 static bool reset_tuning;
 static uint64_t last_freq;
 static enum rig_modes last_mode = MODE_UNKNOWN;
-static const char *curr_charset;
 
 static bool baudot_char(int ch, const void *ab);
 static void capture_call(int y, int x);
@@ -131,8 +130,10 @@ update_tuning_aid(double mark, double space)
 	int och;
 
 	if (reset_tuning) {
-		if (buf)
+		if (buf) {
 			free(buf);
+			buf = NULL;
+		}
 		maxm = maxs = reset_tuning = 0;
 		wsamp = 0;
 	}
@@ -225,7 +226,7 @@ get_input(void)
 		case KEY_RESIZE:
 			teardown_windows();
 			setup_windows();
-			return 0;
+			return RTTY_KEY_REFRESH;
 		case KEY_BREAK:
 			return 3;
 		case KEY_F(1):
@@ -250,6 +251,10 @@ get_input(void)
 			return RTTY_FKEY(10);
 		case KEY_BACKSPACE:
 			return 8;
+		case KEY_LEFT:
+			return RTTY_KEY_LEFT;
+		case KEY_RIGHT:
+			return RTTY_KEY_RIGHT;
 		case KEY_MOUSE:
 			getmouse(&ev);
 			if (ev.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED))
@@ -315,12 +320,12 @@ show_freq(void)
 		freq = get_frequency(rig, VFO_UNKNOWN);
 		if (freq) {
 			if (last_freq != freq)
-				mvwaddstr(status, 0, 19, format_freq(freq));
+				mvwaddstr(status, 0, 15, format_freq(freq));
 		}
 		mode = get_mode(rig);
 		strcpy(fstr, mode_name(mode));
 		if (last_mode != mode)
-			mvwaddstr(status, 0, 44, fstr);
+			mvwaddstr(status, 0, 29, fstr);
 		if (last_mode != mode || last_freq != freq)
 			wrefresh(status);
 		last_mode = mode;
@@ -455,8 +460,6 @@ setup_windows(void)
 	wtimeout(rx, 0);
 	keypad(rx, TRUE);
 	keypad(tx, TRUE);
-	if (curr_charset)
-		display_charset(curr_charset);
 	show_reverse(reverse);
 }
 
@@ -986,9 +989,8 @@ find_field(const char *key)
 void
 display_charset(const char *name)
 {
-	char padded[12];
+	char padded[8];
 
-	curr_charset = name;
 	snprintf(padded, sizeof(padded), "%-11s", name);
 	mvwaddstr(status, 0, 6, padded);
 	wrefresh(status);
@@ -998,18 +1000,22 @@ void
 audio_meter(int16_t envelope)
 {
 	int i = 0;
-	int blocks = envelope / (INT16_MAX / 48);
+	int sz = tx_width - 58;
+	int blocks;
 
-	if (blocks > 16)
-		blocks = 16;
-	mvwaddstr(status, 0, tx_width - 16, "                ");
-	wmove(status, 0, tx_width - 16);
+	if (sz < 1)
+		return;
+	blocks = envelope / (INT16_MAX / (sz * 3));
+	if (blocks > (sz * 3))
+		blocks = (sz * 3);
+	wmove(status, 0, 58);
+	wclrtoeol(status);
 	wcolor_set(status, 1, NULL);
 	wattron(status, A_BOLD);
 	for (i = 0; i < blocks; i++) {
-		if (i == 12)
+		if (i == (int)(sz * 0.75))
 			wcolor_set(status, 2, NULL);
-		else if (i == 14)
+		else if (i == (int)(sz * 0.875))
 			wcolor_set(status, 3, NULL);
 		waddch(status, ACS_BLOCK);
 	}
@@ -1067,7 +1073,6 @@ capture_call(int y, int x)
 	int iy, ix;
 	char captured[15];
 	char *c = captured;
-	char *e;
 
 	getyx(rx, iy, ix);
 	getbegyx(rx, sy, sx);
@@ -1100,18 +1105,23 @@ capture_call(int y, int x)
 		else
 			break;
 	}
-	e = c;
-	while(c < &captured[sizeof(captured)-1])
-		*(c++) = ' ';
 	*c = 0;
-	mvwaddstr(status, 0, 50, captured);
-	*e = 0;
+	update_captured_call(captured);
 	captured_callsign(captured);
-	wrefresh(status);
 
 done:
 	wmove(rx, iy, ix);
 	wrefresh(rx);
+}
+
+void
+update_captured_call(const char *call)
+{
+	char captured[15];
+
+	sprintf(captured, "%-15s", call);
+	mvwaddstr(status, 0, 35, captured);
+	wrefresh(status);
 }
 
 static void
@@ -1176,4 +1186,16 @@ clear_rx_window(void)
 	wclear(rx);
 	wmove(rx, 0, 0);
 	wrefresh(rx);
+}
+
+void
+update_squelch(int level)
+{
+	char buf[6];
+
+	if (level > 9)
+		return;
+	sprintf(buf, "SQL %d", level);
+	mvwaddstr(status, 0, 51, buf);
+	wrefresh(status);
 }

@@ -47,6 +47,7 @@ static bool do_macro(int fkey, bool *figs);
 static bool do_tx(void);
 static void done(void);
 static bool get_rts(void);
+static void handle_rx_char(char ch, bool *rxfigs);
 static void input_loop(void);
 static void send_char(const char ch, bool *figs);
 static void send_rtty_char(char ch);
@@ -82,6 +83,9 @@ bool reverse = false;
 static FILE *log_file;
 
 static char *their_callsign;
+static char sync_buffer[9];
+static int sb_chars;
+static int sync_squelch = 1;
 
 struct charset {
 	const char *chars;
@@ -125,7 +129,7 @@ static struct charset charsets[] = {
 		 * 
 		 * See U.11, U.20, U.22 and S.4 for NUL uses
 		 */
-		.name = "ITA2-Strict",
+		.name = "ITA2(S)",
 		.chars = "\x00" "E\nA SIU"
 		  "\rDRJNFCK"
 		  "TZLWHYPQ"
@@ -239,6 +243,7 @@ int main(int argc, char **argv)
 	setup_log();
 
 	display_charset(charsets[settings.charset].name);
+	update_squelch(sync_squelch);
 
 	setup_outrigger();
 
@@ -257,8 +262,6 @@ reinit(void)
 
 	// Set up the log file
 	setup_log();
-
-	display_charset(charsets[settings.charset].name);
 
 	setup_outrigger();
 }
@@ -395,11 +398,34 @@ baudot2asc(int baudot, bool figs)
 }
 
 static void
+handle_rx_char(char ch, bool *rxfigs)
+{
+	if (log_file != NULL)
+		fwrite(&ch, 1, 1, log_file);
+	switch(ch) {
+		case 0:
+			return;
+		case 0x07:	// BEL
+			return;
+		case 0x0f:	// LTRS
+			*rxfigs = false;
+			return;
+		case 0x0e:	// FIGS
+			*rxfigs = true;
+			return;
+		case ' ':
+			*rxfigs = false;	// USOS
+	}
+	write_rx(ch);
+}
+
+static void
 input_loop(void)
 {
 	bool rx_mode = true;
 	bool rxfigs = false;
 	int rxstate = -1;
+	int i;
 	char ch;
 
 	while (1) {
@@ -417,28 +443,24 @@ input_loop(void)
 			}
 
 			rxstate = get_rtty_ch(rxstate);
-			if (rxstate < 0)
+			if (rxstate < 0) {
+				sb_chars = 0;
 				continue;
+			}
 			if (rxstate > 0x20)
 				printf_errno("got a==%d", rxstate);
 			ch = baudot2asc(rxstate, rxfigs);
-			if (log_file != NULL)
-				fwrite(&ch, 1, 1, log_file);
-			switch(ch) {
-				case 0:
+			if (sb_chars < sync_squelch) {
+				sync_buffer[sb_chars++] = ch;
+				if (sb_chars == sync_squelch) {
+					for (i = 0; i < sync_squelch; i++)
+						handle_rx_char(sync_buffer[i], &rxfigs);
 					continue;
-				case 0x07:	// BEL
+				}
+				else
 					continue;
-				case 0x0f:	// LTRS
-					rxfigs = false;
-					continue;
-				case 0x0e:	// FIGS
-					rxfigs = true;
-					continue;
-				case ' ':
-					rxfigs = false;	// USOS
 			}
-			write_rx(ch);
+			handle_rx_char(ch, &rxfigs);
 		}
 	}
 }
@@ -489,6 +511,24 @@ do_tx(void)
 				break;
 			case RTTY_FKEY(10):
 				do_macro(10, &figs);
+				break;
+			case RTTY_KEY_LEFT:
+				sync_squelch--;
+				if (sync_squelch < 1)
+					sync_squelch = 1;
+				update_squelch(sync_squelch);
+				break;
+			case RTTY_KEY_RIGHT:
+				sync_squelch++;
+				if (sync_squelch > 9)
+					sync_squelch = 9;
+				update_squelch(sync_squelch);
+				break;
+			case RTTY_KEY_REFRESH:
+				display_charset(charsets[settings.charset].name);
+				update_squelch(sync_squelch);
+				show_reverse(reverse);
+				update_captured_call(their_callsign);
 				break;
 			case '`':
 				toggle_reverse(&reverse);
@@ -873,7 +913,10 @@ const char *
 format_freq(uint64_t freq)
 {
 	static char fstr[32];
+	const char *prefix = " kMGTPEZY";
+	int pc = 0;
 	int pos;
+	char *ch;
 
 	fstr[0] = 0;
 	if (freq) {
@@ -883,5 +926,20 @@ format_freq(uint64_t freq)
 			fstr[pos] = '.';
 		}
 	}
+	while (strlen(fstr) > 11) {
+		ch = strrchr(fstr, '.');
+		if (ch == NULL)
+			printf_errno("unable to find dot in freq \"%s\"", fstr);
+		*ch = 0;
+		pc++;
+	}
+
+	ch = strrchr(fstr, 0);
+	if (ch == NULL)
+		printf_errno("unable to find end of string");
+	*(ch++) = prefix[pc];
+	*(ch++) = 'H';
+	*(ch++) = 'z';
+
 	return fstr;
 }
