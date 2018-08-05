@@ -955,8 +955,6 @@ fix_config(void)
 	if ((settings.or_rig == NULL || *settings.or_rig == 0 || settings.or_dev == NULL || *settings.or_dev == 0) &&
 	    (settings.rigctld_host == NULL || settings.rigctld_host[0] == 0 || settings.rigctld_port == 0))
 		settings.ctl_ptt = false;
-	if (settings.or_dev == NULL || *settings.or_dev == 0)
-		settings.ctl_ptt = false;
 }
 
 static const char *
@@ -1073,6 +1071,8 @@ get_rig_freq(void)
 		if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0) {
 			close(rigctld_socket);
 			rigctld_socket = -1;
+			if (settings.ctl_ptt)
+				printf_errno("lost connection getting rig frequency");
 			goto next;
 		}
 		if (sscanf(buf, "%" SCNu64, &ret) == 1)
@@ -1099,11 +1099,15 @@ get_rig_mode(char *buf, size_t sz)
 		if (sock_readln(rigctld_socket, buf, sz) <= 0) {
 			close(rigctld_socket);
 			rigctld_socket = -1;
+			if (settings.ctl_ptt)
+				printf_errno("lost connection getting rig mode");
 			goto next;
 		}
 		if (sock_readln(rigctld_socket, tbuf, sz) <= 0) {
 			close(rigctld_socket);
 			rigctld_socket = -1;
+			if (settings.ctl_ptt)
+				printf_errno("lost connection getting rig bandwidth");
 			goto next;
 		}
 		return buf;
@@ -1120,19 +1124,24 @@ get_rig_ptt(void)
 	char buf[1024];
 	int state;
 
-	if (rig)
-		return get_rig_ptt();
+	if (settings.ctl_ptt) {
+		if (rig)
+			return get_ptt(rig);
 
-	if (rigctld_socket != -1) {
-		if (send(rigctld_socket, "t\n", 2, 0) != 2)
-			goto next;
-		if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0) {
-			close(rigctld_socket);
-			rigctld_socket = -1;
+		if (rigctld_socket != -1) {
+			if (send(rigctld_socket, "t\n", 2, 0) != 2)
+				goto next;
+			if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0) {
+				close(rigctld_socket);
+				rigctld_socket = -1;
+				if (settings.ctl_ptt)
+					printf_errno("lost connection getting rig PTT");
+				goto next;
+			}
+			if (buf[0] == '1')
+				return true;
+			return false;
 		}
-		if (buf[0] == '1')
-			return true;
-		return false;
 	}
 next:
 
@@ -1145,22 +1154,31 @@ static bool
 set_rig_ptt(bool val)
 {
 	char buf[1024];
-	if (rig)
-		return set_rig_ptt(val);
+	int state = TIOCM_RTS;
 
-	if (rigctld_socket != -1) {
-		sprintf(buf, "T %d", val);
-		if (send(rigctld_socket, buf, strlen(buf), 0) != strlen(buf))
-			goto next;
-		if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0) {
-			close(rigctld_socket);
-			rigctld_socket = -1;
+	if (settings.ctl_ptt) {
+		if (rig)
+			return set_ptt(rig, val);
+
+		if (rigctld_socket != -1) {
+			sprintf(buf, "T %d\n", val);
+			if (send(rigctld_socket, buf, strlen(buf), 0) != strlen(buf))
+				goto next;
+			if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0) {
+				close(rigctld_socket);
+				rigctld_socket = -1;
+				if (settings.ctl_ptt)
+					printf_errno("lost connection setting rig PTT");
+				goto next;
+			}
+			if (strcmp(buf, "RPRT 0") == 0)
+				return true;
+			return false;
 		}
-		if (strcmp(buf, "RPRT 0") == 0)
-			return true;
-		return false;
 	}
 next:
 
+	if (ioctl(tty, val ? TIOCMBIS : TIOCMBIC, &state) != 0)
+		printf_errno("%s RTS bit", val ? "setting" : "resetting");
 	return false;
 }
