@@ -30,6 +30,8 @@ Controls:
 | \           | Rescales the tuning aid display                        |
 | CTRL-C      | Exit                                                   |
 | CTRL-L      | Clear RX window                                        |
+| Left-arrow  | Lower squelch level by one                             |
+| Right-arrow | Raise squelch level by one                             |
 | Left-click  | Select callsing from RX window                         |
 | Right-click | Toggle LTRS/FIGS shift on the clicked word (see below) | 
 
