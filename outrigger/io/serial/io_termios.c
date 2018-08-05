@@ -396,9 +396,11 @@ fail:
 
 int serial_termios_close(struct io_serial_handle *hdl)
 {
+	int ret;
 	struct serial_termios_impl	*thdl = (struct serial_termios_impl *)hdl->handle;
 
-	return close(thdl->fd);
+	ret = close(thdl->fd);
+	free(thdl);
 }
 
 int serial_termios_cts(struct io_serial_handle *hdl, bool *val)
