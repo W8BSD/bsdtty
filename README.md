@@ -45,5 +45,4 @@ Outstanding issues:
 * I should idle with LTRS, not a mark signal... super tricky.
 * Really needs a manpage.
 * You shouldn't need to exit and restart the program to load setting changes.
-* Allow console resizing.
 * Add CQRLOG integration.

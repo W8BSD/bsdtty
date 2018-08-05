@@ -62,6 +62,7 @@ static int find_field(const char *key);
 static bool get_figs(chtype ch);
 static void setup_windows(void);
 static char *strip_spaces(char *str);
+static void teardown_windows(void);
 static void toggle_figs(int y, int x);
 static void w_printf(WINDOW *win, const char *format, ...);
 static char *unescape_config(char *str);
@@ -211,6 +212,10 @@ get_input(void)
 	switch(ret) {
 		case ERR:
 			return -1;
+		case KEY_RESIZE:
+			teardown_windows();
+			setup_windows();
+			return 0;
 		case KEY_BREAK:
 			return 3;
 		case KEY_F(1):
@@ -480,6 +485,17 @@ setup_windows(void)
 	wtimeout(rx, 0);
 	keypad(rx, TRUE);
 	keypad(tx, TRUE);
+}
+
+static void
+teardown_windows(void)
+{
+	delwin(tx);
+	delwin(tx_title);
+	delwin(rx);
+	delwin(rx_title);
+	delwin(status);
+	delwin(status_title);
 }
 
 static void
