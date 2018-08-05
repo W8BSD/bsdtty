@@ -682,6 +682,7 @@ static int kenwood_update_if(struct kenwood_hf *khf, bool lock)
 		return -1;
 	}
 	rif = kenwood_parse_if(resp);
+	free(resp);
 	if (rif == NULL) {
 		if (lock)
 			mutex_lock(&khf->cache_mtx);
@@ -934,8 +935,8 @@ int kenwood_hf_set_split_frequency(void *cbdata, uint64_t freq_rx, uint64_t freq
 		mutex_lock(&khf->cache_mtx);
 		khf->last_if.split = SW_ON;
 		mutex_unlock(&khf->cache_mtx);
+		free(resp);
 	}
-	free(resp);
 	return 0;
 }
 
