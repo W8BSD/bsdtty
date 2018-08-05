@@ -921,7 +921,9 @@ send_afsk_bit(enum afsk_bit bit)
 					send_afsk_buf(&mark_to_mark);
 					break;
 				case AFSK_STOP:
-					printf_errno("stop after stop");
+					send_afsk_buf(&mark_to_mark);
+					send_afsk_buf(&mark_to_mark);
+					send_afsk_buf(&mark_to_mark);
 			}
 			break;
 		case AFSK_UNKNOWN:

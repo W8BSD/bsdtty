@@ -154,13 +154,22 @@ int main(int argc, char **argv)
 	load_config();
 
 #ifdef WITH_OUTRIGGER
-	while ((ch = getopt(argc, argv, "ac:C:d:l:m:n:op:q:Q:r:s:t:1:2:3:4:5:6:7:8:9:0:")) != -1) {
+	while ((ch = getopt(argc, argv, "ac:C:d:D:f:l:m:n:op:q:Q:r:R:s:t:1:2:3:4:5:6:7:8:9:0:")) != -1) {
 #else
 	while ((ch = getopt(argc, argv, "ac:C:d:l:m:n:p:q:Q:r:s:t:1:2:3:4:5:6:7:8:9:0:")) != -1) {
 #endif
 		while (optarg && isspace(*optarg))
 			optarg++;
 		switch (ch) {
+			case 'F':
+				settings.freq_offset = strtoi(optarg, NULL, 10);
+				break;
+			case 'R':
+				settings.or_rig = strdup(optarg);
+				break;
+			case 'D':
+				settings.or_dev = strdup(optarg);
+				break;
 			case 'a':
 				settings.afsk = true;
 				break;
@@ -646,12 +655,17 @@ send_char(const char ch, bool *figs)
 		if (ioctl(tty, rts ? TIOCMBIS : TIOCMBIC, &state) != 0)
 			printf_errno("%s RTS bit", rts ? "setting" : "resetting");
 		if (rts) {
-			/* Start with a stop bit to help sync... */
-			if (settings.afsk)
+			/* Start with a byte length of mark to help sync... */
+			if (settings.afsk) {
 				send_afsk_bit(AFSK_STOP);
+				send_afsk_bit(AFSK_STOP);
+				send_afsk_bit(AFSK_STOP);
+				send_afsk_bit(AFSK_STOP);
+				send_afsk_bit(AFSK_STOP);
+			}
 			else {
-				/* Hold it in mark for 1.5 bit times. */
-				usleep(((1/((double)settings.baud_numerator / settings.baud_denominator)))*1500000);
+				/* Hold it in mark for 1 byte time. */
+				usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
 			}
 			*figs = false;
 			/*
@@ -660,7 +674,7 @@ send_char(const char ch, bool *figs)
 			 * a LTRS is the safest, since a FIGS will get
 			 * repeated after the CRLF.
 			 */
-			send_rtty_char(0x1b);
+			send_rtty_char(0x1f);
 			send_rtty_char(8);
 			send_rtty_char(2);
 		}
@@ -814,7 +828,10 @@ usage(const char *cmd)
 	       "-C  Callsign                     \"W8BSD\"\n"
 #ifdef WITH_OUTRIGGER
 	       "-o  Use Outrigger PTT (no argument)\n"
+	       "-R  Outrigger rig name           \"TS-940S\"\n"
+	       "-D  Outrigger port device name   \"/dev/ttyu2\"\n"
 #endif
+	       "-f  VFO frequency offset         170\n"
 	       "\n", cmd);
 	exit(EXIT_FAILURE);
 }
