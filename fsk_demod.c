@@ -745,7 +745,11 @@ void
 toggle_reverse(bool *rev)
 {
 	void *tmp;
+	int16_t *tbuf;
 
+	/*
+	 * RX stuff, swap filters
+	 */
 	*rev = !(*rev);
 	tmp = mfilt;
 	mfilt = sfilt;
@@ -758,6 +762,21 @@ toggle_reverse(bool *rev)
 	tmp = mapfilt;
 	mapfilt = sapfilt;
 	sapfilt = tmp;
+
+	/*
+	 * TX Stuff, swap samples
+	 */
+	tbuf = zero_to_mark.buf;
+	zero_to_mark.buf = zero_to_space.buf;
+	zero_to_space.buf = tbuf;
+
+	tbuf = mark_to_zero.buf;
+	mark_to_zero.buf = space_to_zero.buf;
+	space_to_zero.buf = tbuf;
+
+	tbuf = mark_to_mark.buf;
+	mark_to_mark.buf = space_to_space.buf;
+	space_to_space.buf = tbuf;
 
 	show_reverse(*rev);
 }
