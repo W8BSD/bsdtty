@@ -2,9 +2,9 @@ CFLAGS	+=	-Wall -g -O3
 LDLIBS	+=	-lform -lcurses -lm
 
 .ifndef WITHOUT_OUTRIGGER
-  CFLAGS += -DWITH_OUTRIGGER -Ioutrigger/
+  CFLAGS += -DWITH_OUTRIGGER -Ioutrigger/ -pthread
   LDFLAGS += -Lor-lib
-  LDLIBS += -loutrigger -lpthread
+  LDLIBS += -loutrigger -pthread
 .endif
 
 OBJS = bsdtty.o fsk_demod.o ui.o
