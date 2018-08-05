@@ -46,3 +46,4 @@ Outstanding issues:
 * Really needs a manpage.
 * Add CQRLOG integration.
 * Per-mode offset to frequency so what's in bsdtty.log is directly usable.
+* rigctld support for networked hamlib (or or-rigctld)
