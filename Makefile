@@ -2,7 +2,8 @@ CFLAGS	+=	-Wall -g -O3
 LDLIBS	+=	-lform -lcurses -lm
 
 .ifndef WITHOUT_OUTRIGGER
-  CFLAGS += -DWITH_OUTRIGGER -Ioutrigger/ -Lor-lib
+  CFLAGS += -DWITH_OUTRIGGER -Ioutrigger/
+  LDFLAGS += -Lor-lib
   LDLIBS += -loutrigger -lpthread
 .endif
 

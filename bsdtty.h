@@ -32,10 +32,13 @@ struct bt_settings {
 };
 
 extern struct bt_settings settings;
+extern bool reverse;
 
 char asc2baudot(int asc, bool figs);
 char baudot2asc(int baudot, bool figs);
 int strtoi(const char *, char **endptr, int base);
 void captured_callsign(const char *str);
+const char *mode_name(enum rig_modes mode);
+const char *format_freq(uint64_t freq);
 
 #endif

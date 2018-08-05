@@ -52,7 +52,10 @@ static WINDOW *tx;
 static WINDOW *tx_title;
 static int tx_width;
 static int tx_height;
-static bool reset_tuning = false;
+static bool reset_tuning;
+static uint64_t last_freq;
+static enum rig_modes last_mode = MODE_UNKNOWN;
+static const char *curr_charset;
 
 static bool baudot_char(int ch, const void *ab);
 static void capture_call(int y, int x);
@@ -134,6 +137,12 @@ update_tuning_aid(double mark, double space)
 		if (buf == NULL)
 			printf_errno("alocating %d bytes", sizeof(*buf) * nsamp * 2 + 1);
 	}
+
+	if (reset_tuning) {
+		maxm = maxs = reset_tuning = 0;
+		wsamp = 0;
+	}
+
 	if (phaseadj < 0) {
 		if (wsamp >= phaseadj)
 			buf[(wsamp + phaseadj)*2] = mark;
@@ -182,7 +191,8 @@ update_tuning_aid(double mark, double space)
 					och = '#';
 					break;
 				case ERR & A_CHARTEXT:
-					printf_errno("no char %02x (%d) at %d %d %d %lf %lf", ch, ch, y, x, tx_width, maxm, buf[wsamp*2]);
+					reset_tuning = true;
+					return;
 				default:
 					printf_errno("no char %02x (%d) at %d %d", ch, ch, y, x);
 			}
@@ -190,8 +200,6 @@ update_tuning_aid(double mark, double space)
 		}
 		wmove(tx, 0, 0);
 		wrefresh(tx);
-		if (reset_tuning)
-			maxm = maxs = reset_tuning = 0;
 		wsamp = 0;
 	}
 }
@@ -297,66 +305,24 @@ static void
 show_freq(void)
 {
 #ifdef WITH_OUTRIGGER
-	static uint64_t lfreq = 0;
 	uint64_t freq;
-	enum rig_modes lmode = MODE_UNKNOWN;
 	enum rig_modes mode;
 	char fstr[32];
-	int pos;
 
 	if (rig) {
 		freq = get_frequency(rig, VFO_UNKNOWN);
 		if (freq) {
-			sprintf(fstr, "%" PRIu64, freq);
-			for (pos = strlen(fstr) - 3; pos > 0; pos -= 3) {
-				memmove(&fstr[pos]+1, &fstr[pos], strlen(&fstr[pos])+1);
-				fstr[pos] = '.';
-			}
-			if (lfreq != freq)
-				mvwaddstr(status, 0, 19, fstr);
+			if (last_freq != freq)
+				mvwaddstr(status, 0, 19, format_freq(freq));
 		}
 		mode = get_mode(rig);
-		switch(mode) {
-			case MODE_UNKNOWN:
-				fstr[0] = 0;
-				break;
-			case MODE_CW:
-				strcpy(fstr, "CW");
-				break;
-			case MODE_CWN:
-				strcpy(fstr, "CWN");
-				break;
-			case MODE_CWR:
-				strcpy(fstr, "CWR");
-				break;
-			case MODE_CWRN:
-				strcpy(fstr, "CWRN");
-				break;
-			case MODE_AM:
-				strcpy(fstr, "AM");
-				break;
-			case MODE_LSB:
-				strcpy(fstr, "LSB");
-				break;
-			case MODE_USB:
-				strcpy(fstr, "USB");
-				break;
-			case MODE_FM:
-				strcpy(fstr, "FM");
-				break;
-			case MODE_FMN:
-				strcpy(fstr, "FMN");
-				break;
-			case MODE_FSK:
-				strcpy(fstr, "FSK");
-				break;
-		}
-		if (lmode != mode)
+		strcpy(fstr, mode_name(mode));
+		if (last_mode != mode)
 			mvwaddstr(status, 0, 44, fstr);
-		if (lmode != mode || lfreq != freq)
+		if (last_mode != mode || last_freq != freq)
 			wrefresh(status);
-		lmode = mode;
-		lfreq = freq;
+		last_mode = mode;
+		last_freq = freq;
 	}
 #endif
 }
@@ -485,6 +451,9 @@ setup_windows(void)
 	wtimeout(rx, 0);
 	keypad(rx, TRUE);
 	keypad(tx, TRUE);
+	if (curr_charset)
+		display_charset(curr_charset);
+	show_reverse(reverse);
 }
 
 static void
@@ -496,6 +465,9 @@ teardown_windows(void)
 	delwin(rx_title);
 	delwin(status);
 	delwin(status_title);
+	last_freq = 0;
+	last_mode = MODE_UNKNOWN;
+	reset_tuning_aid();
 }
 
 static void
@@ -1005,6 +977,7 @@ display_charset(const char *name)
 {
 	char padded[12];
 
+	curr_charset = name;
 	snprintf(padded, sizeof(padded), "%-11s", name);
 	mvwaddstr(status, 0, 6, padded);
 	wrefresh(status);

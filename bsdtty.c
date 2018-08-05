@@ -77,7 +77,7 @@ struct bt_settings settings = {
 static int tty = -1;
 
 /* RX in reverse mode */
-static bool reverse = false;
+bool reverse = false;
 
 /* Log thing */
 static FILE *log_file;
@@ -552,6 +552,10 @@ send_char(const char ch, bool *figs)
 	int state;
 	char ach;
 	time_t now;
+#ifdef WITH_OUTRIGGER
+	static uint64_t freq;
+	static enum rig_modes mode;
+#endif
 
 	bch = asc2baudot(ch, *figs);
 	rts = get_rts();
@@ -569,8 +573,13 @@ send_char(const char ch, bool *figs)
 			}
 		}
 #ifdef WITH_OUTRIGGER
-		if (settings.or_ptt)
+		if (rts && rig) {
+			freq = get_frequency(rig, VFO_UNKNOWN);
+			mode = get_mode(rig);
+		}
+		if (settings.or_ptt) {
 			set_ptt(rig, rts);
+		}
 		else
 #endif
 		if (ioctl(tty, rts ? TIOCMBIS : TIOCMBIC, &state) != 0)
@@ -589,7 +598,14 @@ send_char(const char ch, bool *figs)
 		}
 		now = time(NULL);
 		if (log_file != NULL) {
+#ifdef WITH_OUTRIGGER
+			if (rig == NULL)
+#endif
 			fprintf(log_file, "\n------- %s of transmission (%.24s) -------\n", rts ? "Start" : "End", ctime(&now));
+#ifdef WITH_OUTRIGGER
+			else
+				fprintf(log_file, "\n------- %s of transmission (%.24s) on %s (%s) -------\n", rts ? "Start" : "End", ctime(&now), format_freq(freq), mode_name(mode));
+#endif
 			fflush(log_file);
 		}
 		mark_tx_extent(rts);
@@ -659,8 +675,10 @@ done(void)
 	int state = 0;
 
 #ifdef WITH_OUTRIGGER
-	if (settings.or_ptt && rig)
+	if (settings.or_ptt && rig) {
 		set_ptt(rig, false);
+		close_rig(rig);
+	}
 #endif
 
 	if (tty != -1) {
@@ -797,4 +815,50 @@ fix_config(void)
 		settings.or_ptt = false;
 	if (settings.or_dev == NULL || *settings.or_dev == 0)
 		settings.or_ptt = false;
+}
+
+const char *
+mode_name(enum rig_modes mode)
+{
+	switch(mode) {
+		case MODE_UNKNOWN:
+			return "";
+		case MODE_CW:
+			return "CW";
+		case MODE_CWN:
+			return "CWN";
+		case MODE_CWR:
+			return "CWR";
+		case MODE_CWRN:
+			return "CWRN";
+		case MODE_AM:
+			return "AM";
+		case MODE_LSB:
+			return "LSB";
+		case MODE_USB:
+			return "USB";
+		case MODE_FM:
+			return "FM";
+		case MODE_FMN:
+			return "FMN";
+		case MODE_FSK:
+			return "FSK";
+	}
+}
+
+const char *
+format_freq(uint64_t freq)
+{
+	static char fstr[32];
+	int pos;
+
+	fstr[0] = 0;
+	if (freq) {
+		sprintf(fstr, "%" PRIu64, freq);
+		for (pos = strlen(fstr) - 3; pos > 0; pos -= 3) {
+			memmove(&fstr[pos]+1, &fstr[pos], strlen(&fstr[pos])+1);
+			fstr[pos] = '.';
+		}
+	}
+	return fstr;
 }
