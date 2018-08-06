@@ -170,13 +170,15 @@ int main(int argc, char **argv)
 	load_config();
 
 #ifdef WITH_OUTRIGGER
-	while ((ch = getopt(argc, argv, "ac:C:d:D:f:l:m:n:p:q:Q:r:R:s:t:T1:2:3:4:5:6:7:8:9:0:")) != -1) {
+	while ((ch = getopt(argc, argv, "ac:C:d:D:f:hl:m:n:p:q:Q:r:R:s:t:T1:2:3:4:5:6:7:8:9:0:")) != -1) {
 #else
-	while ((ch = getopt(argc, argv, "ac:C:d:f:l:m:n:p:q:Q:r:s:t:T1:2:3:4:5:6:7:8:9:0:")) != -1) {
+	while ((ch = getopt(argc, argv, "ac:C:d:f:hl:m:n:p:q:Q:r:s:t:T1:2:3:4:5:6:7:8:9:0:")) != -1) {
 #endif
 		while (optarg && isspace(*optarg))
 			optarg++;
 		switch (ch) {
+			case 'h':
+				usage(argv[0]);
 			case 'F':
 				settings.freq_offset = strtoi(optarg, NULL, 10);
 				break;
@@ -694,7 +696,11 @@ send_char(const char ch, bool *figs)
 		}
 		set_rig_ptt(rts);
 		if (rts) {
-			/* Start with a byte length of mark to help sync... */
+			/* 
+			 * Start with a byte length of mark to help sync...
+			 * This also covers the RX -> TX switching time
+			 * due to the relay.
+			 */
 			if (settings.afsk) {
 				send_afsk_bit(AFSK_STOP);
 				send_afsk_bit(AFSK_STOP);
