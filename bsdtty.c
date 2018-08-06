@@ -83,7 +83,8 @@ struct bt_settings settings = {
 	.afsk = false,
 	.ctl_ptt = false,
 	.freq_offset = 170,
-	.rigctld_port = 4532
+	.rigctld_port = 4532,
+	.xmlrpc_port = 7362
 };
 
 /* UART Stuff */
@@ -170,13 +171,19 @@ int main(int argc, char **argv)
 	load_config();
 
 #ifdef WITH_OUTRIGGER
-	while ((ch = getopt(argc, argv, "ac:C:d:D:f:hl:m:n:p:q:Q:r:R:s:t:T1:2:3:4:5:6:7:8:9:0:")) != -1) {
+	while ((ch = getopt(argc, argv, "ac:C:d:D:f:hl:m:n:p:P:q:Q:r:R:s:t:T1:x:2:3:4:5:6:7:8:9:0:")) != -1) {
 #else
-	while ((ch = getopt(argc, argv, "ac:C:d:f:hl:m:n:p:q:Q:r:s:t:T1:2:3:4:5:6:7:8:9:0:")) != -1) {
+	while ((ch = getopt(argc, argv, "ac:C:d:f:hl:m:n:p:P:q:Q:r:s:t:T1:x:2:3:4:5:6:7:8:9:0:")) != -1) {
 #endif
 		while (optarg && isspace(*optarg))
 			optarg++;
 		switch (ch) {
+			case 'x':
+				settings.xmlrpc_host = strdup(optarg);
+				break;
+			case 'P':
+				settings.xmlrpc_port = strtoi(optarg, NULL, 10);
+				break;
 			case 'h':
 				usage(argv[0]);
 			case 'F':
@@ -875,6 +882,8 @@ usage(const char *cmd)
 	       "-D  Outrigger port device name   \"/dev/ttyu2\"\n"
 #endif
 	       "-f  VFO frequency offset         170\n"
+	       "-x  XML-RPC host name            \"localhost\"\n"
+	       "-P  XML-RPC port                 7362\n"
 	       "\n", cmd);
 	exit(EXIT_FAILURE);
 }
