@@ -25,6 +25,8 @@ struct bt_settings {
 	char		*rigctld_host;
 	uint16_t	rigctld_port;
 	int		freq_offset;
+	char		*xmlrpc_host;
+	uint16_t	xmlrpc_port;
 };
 
 extern struct bt_settings settings;
@@ -39,5 +41,8 @@ void reinit(void);
 void fix_config(void);
 uint64_t get_rig_freq(void);
 const char *get_rig_mode(char *buf, size_t sz);
+void send_string(const char *str);
+bool get_rig_ptt(void);
+bool set_rig_ptt(bool val);
 
 #endif

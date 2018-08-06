@@ -46,6 +46,7 @@
 #include <unistd.h>
 
 #include "bsdtty.h"
+#include "fldigi_xmlrpc.h"
 #include "fsk_demod.h"
 #include "ui.h"
 
@@ -54,18 +55,15 @@
 #include "iniparser/src/dictionary.h"
 #endif
 
-static bool do_macro(int fkey, bool *figs);
+static bool do_macro(int fkey);
 static bool do_tx(void);
 static void done(void);
-static bool get_rig_ptt(void);
 static bool get_rts(void);
-static void handle_rx_char(char ch, bool *rxfigs);
+static void handle_rx_char(char ch);
 static void input_loop(void);
 static const char *mode_name(enum rig_modes mode);
-static void send_char(const char ch, bool *figs);
+static void send_char(const char ch);
 static void send_rtty_char(char ch);
-static void send_string(const char *str, bool *figs);
-static bool set_rig_ptt(bool val);
 static void setup_log(void);
 static void setup_rig_control(void);
 static void setup_tty(void);
@@ -103,6 +101,8 @@ static int sb_chars;
 static int sync_squelch = 1;
 int rigctld_socket = -1;
 unsigned serial;
+static bool rxfigs;
+static bool txfigs;
 
 struct charset {
 	const char *chars;
@@ -273,6 +273,7 @@ int main(int argc, char **argv)
 	update_serial(serial);
 
 	setup_rig_control();
+	setup_xmlrpc();
 
 	// Finally, do the thing.
 	input_loop();
@@ -430,7 +431,7 @@ baudot2asc(int baudot, bool figs)
 }
 
 static void
-handle_rx_char(char ch, bool *rxfigs)
+handle_rx_char(char ch)
 {
 	if (log_file != NULL)
 		fwrite(&ch, 1, 1, log_file);
@@ -440,14 +441,15 @@ handle_rx_char(char ch, bool *rxfigs)
 		case 0x07:	// BEL
 			return;
 		case 0x0f:	// LTRS
-			*rxfigs = false;
+			rxfigs = false;
 			return;
 		case 0x0e:	// FIGS
-			*rxfigs = true;
+			rxfigs = true;
 			return;
 		case ' ':
-			*rxfigs = false;	// USOS
+			rxfigs = false;	// USOS
 	}
+	fldigi_add_rx(ch);
 	write_rx(ch);
 }
 
@@ -455,12 +457,12 @@ static void
 input_loop(void)
 {
 	bool rx_mode = true;
-	bool rxfigs = false;
 	int rxstate = -1;
 	int i;
 	char ch;
 
 	while (1) {
+		handle_xmlrpc();
 		if (!rx_mode) {	// TX Mode
 			if (!do_tx())
 				return;
@@ -487,13 +489,13 @@ input_loop(void)
 				sync_buffer[sb_chars++] = ch;
 				if (sb_chars == sync_squelch) {
 					for (i = 0; i < sync_squelch; i++)
-						handle_rx_char(sync_buffer[i], &rxfigs);
+						handle_rx_char(sync_buffer[i]);
 					continue;
 				}
 				else
 					continue;
 			}
-			handle_rx_char(ch, &rxfigs);
+			handle_rx_char(ch);
 		}
 	}
 }
@@ -502,7 +504,6 @@ static bool
 do_tx(void)
 {
 	int ch;
-	bool figs = false;
 
 	for (;;) {
 		ch = get_input();
@@ -516,34 +517,34 @@ do_tx(void)
 			case 3:
 				return false;
 			case RTTY_FKEY(1):
-				do_macro(1, &figs);
+				do_macro(1);
 				break;
 			case RTTY_FKEY(2):
-				do_macro(2, &figs);
+				do_macro(2);
 				break;
 			case RTTY_FKEY(3):
-				do_macro(3, &figs);
+				do_macro(3);
 				break;
 			case RTTY_FKEY(4):
-				do_macro(4, &figs);
+				do_macro(4);
 				break;
 			case RTTY_FKEY(5):
-				do_macro(5, &figs);
+				do_macro(5);
 				break;
 			case RTTY_FKEY(6):
-				do_macro(6, &figs);
+				do_macro(6);
 				break;
 			case RTTY_FKEY(7):
-				do_macro(7, &figs);
+				do_macro(7);
 				break;
 			case RTTY_FKEY(8):
-				do_macro(8, &figs);
+				do_macro(8);
 				break;
 			case RTTY_FKEY(9):
-				do_macro(9, &figs);
+				do_macro(9);
 				break;
 			case RTTY_FKEY(10):
-				do_macro(10, &figs);
+				do_macro(10);
 				break;
 			case RTTY_KEY_LEFT:
 				sync_squelch--;
@@ -597,7 +598,7 @@ do_tx(void)
 					change_settings();
 				break;
 			default:
-				send_char(ch, &figs);
+				send_char(ch);
 				break;
 		}
 		if (!get_rts()) {
@@ -606,18 +607,18 @@ do_tx(void)
 	}
 }
 
-static void
-send_string(const char *str, bool *figs)
+void
+send_string(const char *str)
 {
 	if (str == NULL)
 		return;
 
 	for (; *str; str++)
-		send_char(*str, figs);
+		send_char(*str);
 }
 
 static bool
-do_macro(int fkey, bool *figs)
+do_macro(int fkey)
 {
 	size_t len;
 	size_t i;
@@ -633,27 +634,27 @@ do_macro(int fkey, bool *figs)
 	for (i = 0; i < len; i++) {
 		switch (settings.macros[m][i]) {
 			case '\\':
-				send_string(settings.callsign, figs);
+				send_string(settings.callsign);
 				break;
 			case '`':
-				send_string(their_callsign, figs);
+				send_string(their_callsign);
 				break;
 			case '[':
-				send_char('\r', figs);
+				send_char('\r');
 				break;
 			case ']':
-				send_char('\n', figs);
+				send_char('\n');
 				break;
 			case '^':
 				serial++;
 				/* Fall-through */
 			case '%':
 				sprintf(buf, "%d", serial);
-				send_string(buf, figs);
+				send_string(buf);
 				update_serial(serial);
 				break;
 			default:
-				send_char(settings.macros[m][i], figs);
+				send_char(settings.macros[m][i]);
 				break;
 		}
 	}
@@ -664,7 +665,7 @@ do_macro(int fkey, bool *figs)
 }
 
 static void
-send_char(const char ch, bool *figs)
+send_char(const char ch)
 {
 	const char fstr[] = "\x1f\x1b"; // LTRS, FIGS
 	char bch;
@@ -675,7 +676,7 @@ send_char(const char ch, bool *figs)
 	static uint64_t freq = 0;
 	static char mode[16];
 
-	bch = asc2baudot(ch, *figs);
+	bch = asc2baudot(ch, txfigs);
 	rts = get_rts();
 	if (ch == '\t' || (!rts && bch != 0)) {
 		rts ^= 1;
@@ -712,7 +713,7 @@ send_char(const char ch, bool *figs)
 				/* Hold it in mark for 1 byte time. */
 				usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
 			}
-			*figs = false;
+			txfigs = false;
 			/*
 			 * Per ITU-T S.1, the FIRST symbol should be a
 			 * shift... since it's most likely to be lost,
@@ -737,9 +738,9 @@ send_char(const char ch, bool *figs)
 		return;
 	if (bch) {
 		// Send FIGS/LTRS as needed
-		if ((!!(bch & 0x20)) != *figs) {
-			*figs = !!(bch & 0x20);
-			send_rtty_char(fstr[*figs]);
+		if ((!!(bch & 0x20)) != txfigs) {
+			txfigs = !!(bch & 0x20);
+			send_rtty_char(fstr[txfigs]);
 		}
 		/* We do this to ensure it's valid baudot */
 		ach = baudot2asc(bch & 0x1f, bch & 0x20);
@@ -749,12 +750,12 @@ send_char(const char ch, bool *figs)
 					fwrite(&ach, 1, 1, log_file);
 				break;
 			case 0x0e:
-				*figs = false;
+				txfigs = false;
 				if (log_file != NULL)
 					fwrite(&ach, 1, 1, log_file);
 				break;
 			case 0x0f:
-				*figs = true;
+				txfigs = true;
 				if (log_file != NULL)
 					fwrite(&ach, 1, 1, log_file);
 				break;
@@ -770,7 +771,7 @@ send_char(const char ch, bool *figs)
 				break;
 		}
 		if (ach == ' ')
-			*figs = false;	// USOS
+			txfigs = false;	// USOS
 		bch &= 0x1f;
 		send_rtty_char(bch);
 		if (bch == 0x08)
@@ -1159,7 +1160,7 @@ next:
 	return NULL;
 }
 
-static bool
+bool
 get_rig_ptt(void)
 {
 	char buf[1024];
@@ -1191,7 +1192,7 @@ next:
 	return !!(state & TIOCM_RTS);
 }
 
-static bool
+bool
 set_rig_ptt(bool val)
 {
 	char buf[1024];

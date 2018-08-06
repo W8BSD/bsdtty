@@ -701,6 +701,18 @@ struct field_info {
 		.type = STYPE_UINT16,
 		.ptr = (char *)(&settings) + offsetof(struct bt_settings, rigctld_port)
 	},
+	{
+		.name = "XML-RPC host",
+		.key = "xmlrpchost",
+		.type = STYPE_STRING,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, xmlrpc_host)
+	},
+	{
+		.name = "XML-RPC port",
+		.key = "xmlrpcport",
+		.type = STYPE_UINT16,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, xmlrpc_port)
+	},
 };
 #define NUM_FIELDS (sizeof(fields) / sizeof(fields[0]))
 

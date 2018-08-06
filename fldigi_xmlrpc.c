@@ -1,0 +1,572 @@
+/*-
+ * Copyright (c) 2018 Stephen Hurd, W8BSD
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ *
+ */
+
+/*
+ * This implements enough of the fldigi XML-RPC to use TLF... but that's
+ * it for now.
+ */
+
+#include <sys/types.h>
+#include <sys/socket.h>
+
+#include <netinet/in.h>
+
+#include <ctype.h>
+#include <errno.h>
+#include <netdb.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "bsdtty.h"
+#include "ui.h"
+
+static int *lsocks;
+static size_t nlsocks;
+static int *csocks;
+static size_t ncsocks;
+static char *tx_buffer;
+static size_t tx_bufsz;
+static size_t tx_buflen;
+static char *rx_buffer;
+static size_t rx_bufsz;
+static size_t rx_buflen;
+static size_t rx_offset;
+static const char * base64alphabet = 
+ "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+
+static int add_char(char *pos, char ch, int done, char *end);
+static void add_tx(const char *str);
+static int b64_encode(char *target, size_t tlen, const char *source, size_t slen);
+static void handle_request(int si);
+static void remove_sock(int *sarr, size_t *n, int si);
+static void send_xmlrpc_response(int sock, char *type, char *value);
+static int sock_readln(int sock, char *buf, size_t bufsz);
+
+void
+setup_xmlrpc(void)
+{
+	struct addrinfo hints = {
+		.ai_family = AF_UNSPEC,
+		.ai_socktype = SOCK_STREAM,
+		.ai_protocol = IPPROTO_TCP,
+		.ai_flags = AI_ADDRCONFIG | AI_NUMERICSERV | AI_PASSIVE
+	};
+	struct addrinfo *ai;
+	struct addrinfo *aip;
+	char port[6];
+	int sock;
+	int *tmp;
+
+	if (settings.xmlrpc_host == NULL || settings.xmlrpc_host[0] == 0)
+		return;
+	if (settings.xmlrpc_port == 0)
+		return;
+	sprintf(port, "%hu", settings.xmlrpc_port);
+	if (getaddrinfo(settings.xmlrpc_host, port, &hints, &ai) != 0)
+		return;
+	for (aip = ai; aip != NULL; aip = aip->ai_next) {
+		sock = socket(aip->ai_family, aip->ai_socktype, aip->ai_protocol);
+		if (sock == -1)
+			continue;
+		if (bind(sock, aip->ai_addr, aip->ai_addrlen) == 0) {
+			if (listen(sock, 8) == 0) {
+				nlsocks++;
+				tmp = realloc(lsocks, sizeof(*lsocks) * nlsocks);
+				if (tmp == NULL) {
+					close(sock);
+					sock = -1;
+				}
+				else {
+					lsocks = tmp;
+					lsocks[nlsocks - 1] = sock;
+				}
+			}
+			else {
+				close(sock);
+				sock = -1;
+			}
+		}
+		else {
+			close(sock);
+			sock = -1;
+		}
+	}
+	freeaddrinfo(ai);
+}
+
+/*
+ * Currently, this assumes that the entire request will be available and that
+ * the entire response can be written.
+ */
+void
+handle_xmlrpc(void)
+{
+	fd_set rfds;
+	int i;
+	int msock;
+	struct timeval tv = {
+		.tv_sec = 0,
+		.tv_usec = 0
+	};
+	struct sockaddr sa;
+	socklen_t salen;
+	int sock;
+	int *tmp;
+
+	/* First, service listening sockets */
+	if (nlsocks > 0) {
+		msock = -1;
+		for (i = 0; i < nlsocks; i++) {
+			if (lsocks[i] > msock)
+				msock = lsocks[i];
+			FD_SET(lsocks[i], &rfds);
+		}
+		if (select(msock + 1, &rfds, NULL, NULL, &tv) > 0) {
+			for (i = 0; i < nlsocks; i++) {
+				if (FD_ISSET(lsocks[i], &rfds)) {
+					sock = accept(lsocks[i], &sa, &salen);
+					if (sock != -1) {
+						ncsocks++;
+						tmp = realloc(csocks, sizeof(*csocks) * ncsocks);
+						if (tmp == NULL) {
+							close(sock);
+							sock = -1;
+						}
+						else {
+							csocks = tmp;
+							csocks[ncsocks - 1] = sock;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/* Now service connected sockets */
+	if (ncsocks > 0) {
+		msock = -1;
+		for (i = 0; i < ncsocks; i++) {
+			if (csocks[i] > msock)
+				msock = csocks[i];
+			FD_SET(csocks[i], &rfds);
+		}
+		if (select(msock + 1, &rfds, NULL, NULL, &tv) > 0) {
+			for (i = 0; i < ncsocks; i++) {
+				if (FD_ISSET(csocks[i], &rfds))
+					handle_request(i);
+			}
+		}
+	}
+}
+
+/*
+ * Super fragile...
+ */
+static void
+handle_request(int si)
+{
+	char buf[1024];
+	char cmd[128] = "";
+	char param[256] = "";
+	char *p = param;
+	bool headers = true;
+	long content_len = -1;
+	long offset = 0;
+	char *c;
+	int ret;
+	size_t bytes;
+
+	for (bytes = 0; content_len == -1 || bytes < content_len;) {
+		if ((ret = sock_readln(csocks[si], buf, sizeof(buf))) < 0)
+			remove_sock(csocks, &ncsocks, si);
+		else {
+			if (headers) {
+				if (buf[0] == 0) {
+					headers = false;
+					continue;
+				}
+				if (strncasecmp(buf, "Content-Length:", 15) == 0) {
+					c = strrchr(buf, ':');
+					if (c == NULL)
+						continue;
+					c++;
+					while (isspace(*c))
+						c++;
+					content_len = strtol(c, NULL, 10);
+					if (content_len == 0)
+						content_len = -1;
+				}
+			}
+			else if (ret == 0) {
+				break;
+			}
+			else {
+				bytes += ret;
+				if (cmd[0] == 0) {
+					c = strstr(buf, "<methodName>");
+					if (c != NULL) {
+						c += 12;
+						strncpy(cmd, c, sizeof(cmd));
+						cmd[sizeof(cmd) - 1] = 0;
+						c = strchr(cmd, '<');
+						if (c != NULL)
+							*c = 0;
+					}
+				}
+				c = strstr(buf, "<value>");
+				if (c != NULL) {
+					c += 7;
+					c = strchr(c, '>');
+					if (c != NULL) {
+						c++;
+						strncpy(p, c, sizeof(param) - (p - param));
+						param[sizeof(param) - 1] = 0;
+						c = strchr(p, '<');
+						if (c != NULL) {
+							*c = 0;
+							p = c + 1;
+							if (p >= param + sizeof(param))
+								p = param + sizeof(param) - 1;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/* Now handle the command */
+	if (strcmp(cmd, "main.rx") == 0) {
+		if (get_rig_ptt())
+			send_string("\t");
+	}
+	else if (strcmp(cmd, "main.get_trx_state") == 0) {
+		if (get_rig_ptt())
+			send_xmlrpc_response(csocks[si], "string", "TX");
+		else
+			send_xmlrpc_response(csocks[si], "string", "RX");
+	}
+	else if (strcmp(cmd, "text.clear_tx") == 0) {
+		tx_buflen = 0;
+		tx_buffer[0] = 0;
+		send_xmlrpc_response(csocks[si], NULL, NULL);
+	}
+	else if (strcmp(cmd, "text.add_tx") == 0) {
+		if (param[0])
+			add_tx(param);
+		send_xmlrpc_response(csocks[si], NULL, NULL);
+	}
+	else if (strcmp(cmd, "main.tx") == 0) {
+		send_string(tx_buffer);
+		tx_buflen = 0;
+		tx_buffer[0] = 0;
+		send_xmlrpc_response(csocks[si], NULL, NULL);
+	}
+	else if (strcmp(cmd, "text.get_rx_length") == 0) {
+		sprintf(buf, "%zu", rx_offset + rx_buflen);
+		send_xmlrpc_response(csocks[si], "int", buf);
+	}
+	else if (strcmp(cmd, "text.get_rx") == 0) {
+		offset = strtol(param, &c, 10);
+		content_len = strtol(c + 1, NULL, 10);
+		/*
+		 * TODO: TLF uses start:end, not start:len as documented
+		 * on fldigi website...
+		 */
+		content_len -= offset;
+		if (rx_offset <= offset) {
+			if (content_len + offset <= rx_offset + rx_buflen) {
+				b64_encode(buf, sizeof(buf), rx_buffer + (offset - rx_offset), content_len);
+				send_xmlrpc_response(csocks[si], "base64", buf);
+				memmove(rx_buffer, rx_buffer + (offset - rx_offset) + content_len, strlen(rx_buffer + (offset - rx_offset)));
+				rx_buflen -= (offset - rx_offset) + content_len;
+				rx_offset += (offset - rx_offset) + content_len;
+				
+			}
+			else
+				printf_errno("invalid rxbuf request length %ld + %ld (%zu + %zu)", offset, content_len, rx_offset, rx_buflen);
+		}
+		else
+			printf_errno("invalid rxbuf request offset");
+	}
+	else if (strcmp(cmd, "modem.get_carrier") == 0) {
+		sprintf(buf, "%d", (int)((settings.mark_freq + settings.space_freq) / 2));
+		send_xmlrpc_response(csocks[si], "int", buf);
+	}
+	else if (strcmp(cmd, "modem.set_carrier") == 0) {
+		// TODO?
+		sprintf(buf, "%d", (int)((settings.mark_freq + settings.space_freq) / 2));
+		send_xmlrpc_response(csocks[si], "int", buf);
+	}
+
+	if (bytes != content_len && si != -1)
+		remove_sock(csocks, &ncsocks, si);
+}
+
+static int
+sock_readln(int sock, char *buf, size_t bufsz)
+{
+	fd_set rd;
+	int i;
+	int bytes = 0;
+	int ret;
+	struct timeval tv;
+
+	for (i = 0; i < bufsz - 1; i++) {
+		FD_ZERO(&rd);
+		FD_SET(sock, &rd);
+		tv.tv_sec = 0;
+		tv.tv_usec = 100000;
+		switch(select(sock+1, &rd, NULL, NULL, &tv)) {
+			case -1:
+				if (errno == EINTR)
+					continue;
+				return -1;
+			case 0:
+				goto done;
+			case 1:
+				ret = recv(sock, buf + i, 1, MSG_WAITALL);
+				if (ret == -1)
+					return -1;
+				if (ret == 0)
+					goto done;
+				bytes++;
+				if (buf[i] == '\n')
+					goto done;
+				break;
+		}
+	}
+done:
+	buf[i] = 0;
+	while (i > 0 && buf[i-1] == '\n')
+		buf[--i] = 0;
+	while (i > 0 && buf[i-1] == '\r')
+		buf[--i] = 0;
+	return bytes;
+}
+
+static void
+remove_sock(int *sarr, size_t *n, int si)
+{
+	close(sarr[si]);
+	if (si != *n - 1) {
+		memmove(&sarr[si], &sarr[si + 1],
+		    sizeof(*sarr) * (*n - si - 1));
+	}
+	(*n)--;
+}
+
+static void
+send_xmlrpc_response(int sock, char *type, char *value)
+{
+	char buf[1024];
+
+	sprintf(buf, "HTTP/1.1 200 OK\r\nConnection: Keep-Alive\r\nContent-Type: text/xml\r\nContent-Length: %lu\r\n\r\n<?xml version=\"1.0\"?>\n<methodResponse><params><param><value><", 61+(type == NULL ? 5 : (strlen(type) * 2) + strlen(value) + 4) + 42);
+	if (type == NULL)
+		strcat(buf, "nil/>");
+	else {
+		sprintf(strchr(buf, 0), "%s>%s</%s>", type, value, type);
+	}
+	strcat(buf, "</value></param></params></methodResponse>");
+	send(sock, buf, strlen(buf), 0);
+}
+
+static void
+add_tx(const char *str)
+{
+	char *tmp;
+	size_t slen = strlen(str);
+	const char *c;
+	char *b = &tx_buffer[tx_buflen];
+
+	if (slen + tx_buflen >= tx_bufsz) {
+		tmp = realloc(tx_buffer, tx_buflen + slen + 1);
+		if (tmp == NULL)
+			return;
+		tx_buffer = tmp;
+		tx_bufsz = tx_buflen + slen + 1;
+		b = &tx_buffer[tx_buflen];
+	}
+
+	/*
+	 * Now copy it in, but we need to parse out ^r and XML entities
+	 */
+	for (c = str; *c; c++) {
+		switch (*c) {
+			case '^':
+				c++;
+				switch (*c) {
+					case 0:
+						break;
+					case 'r':
+					case 'R':
+						*(b++) = '\t';
+						break;
+					case '^':
+						*(b++) = '^';
+						break;
+					default:
+						break;
+				}
+				break;
+			case '&':
+				if (strncmp(c, "&amp;", 5) == 0) {
+					*(b++) = '&';
+					c += 4;
+				}
+				else if (strncmp(c, "&lt;", 4) == 0) {
+					*(b++) = '<';
+					c += 3;
+				}
+				else
+					printf_errno("unhandled entity: %s", c);
+				break;
+			default:
+				*(b++) = *c;
+				break;
+		}
+	}
+	*b = 0;
+	tx_buflen = b - tx_buffer;
+}
+
+void
+fldigi_add_rx(char ch)
+{
+	char *tmp;
+
+	if (rx_buflen + 1 >= rx_bufsz) {
+		tmp = realloc(rx_buffer, rx_bufsz ? rx_bufsz * 2 : 128);
+		if (tmp == NULL)
+			return;
+		rx_buffer = tmp;
+		rx_bufsz = rx_bufsz ? rx_bufsz * 2 : 128;
+	}
+
+	tmp = &rx_buffer[rx_buflen];
+	*(tmp++) = ch;
+	*tmp = 0;
+	rx_buflen++;
+}
+
+static int
+add_char(char *pos, char ch, int done, char *end)
+{
+	if(pos>=end)  {
+		return(1);
+	}
+	if(done)
+		*pos=base64alphabet[64];
+	else
+		*pos=base64alphabet[(int)ch];
+	return(0);
+}
+
+static int
+b64_encode(char *target, size_t tlen, const char *source, size_t slen)
+{
+	const char	*inp;
+	char	*outp;
+	char	*outend;
+	const char	*inend;
+	char	*tmpbuf=NULL;
+	int		done=0;
+	char	enc;
+	int		buf;
+	
+	if(slen==0)
+		slen=strlen(source);
+	inp=source;
+	if(source==target)  {
+		tmpbuf=(char *)malloc(tlen);
+		if(tmpbuf==NULL)
+			return(-1);
+		outp=tmpbuf;
+	}
+	else
+		outp=target;
+
+	outend=outp+tlen;
+	inend=inp+slen;
+	for(;(inp < inend) && !done;)  {
+		enc=*(inp++);
+		buf=(enc & 0x03)<<4;
+		enc=(enc&0xFC)>>2;
+		if(add_char(outp++, enc, done, outend)) {
+			if (tmpbuf)
+				free(tmpbuf);
+			return(-1);
+		}
+		if (inp>=inend)
+			enc=buf;
+		else
+			enc=buf|((*inp & 0xF0) >> 4);
+		if(add_char(outp++, enc, done, outend)) {
+			if (tmpbuf)
+				free(tmpbuf);
+			return(-1);
+		}
+		if(inp==inend)
+			done=1;
+		if (!done) {
+			buf=(*(inp++)<<2)&0x3C;
+			if (inp == inend)
+				enc=buf;
+			else
+				enc=buf|((*inp & 0xC0)>>6);
+		}
+		if(add_char(outp++, enc, done, outend)) {
+			if (tmpbuf)
+				free(tmpbuf);
+			return(-1);
+		}
+		if(inp==inend)
+			done=1;
+		if (!done)
+			enc=((int)*(inp++))&0x3F;
+		if(add_char(outp++, enc, done, outend)) {
+			if (tmpbuf)
+				free(tmpbuf);
+			return(-1);
+		}
+		if(inp==inend)
+			done=1;
+	}
+	if(outp<outend)
+		*outp=0;
+	int result;
+	if(source==target) {
+		memcpy(target,tmpbuf,tlen);
+		result = outp - tmpbuf;
+		free(tmpbuf);
+	} else
+		result = outp - target;
+
+	return result;
+}
+

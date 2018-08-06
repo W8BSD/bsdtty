@@ -7,7 +7,7 @@ LDLIBS	+=	-lform -lcurses -lm
   LDLIBS += -loutrigger -pthread
 .endif
 
-OBJS = bsdtty.o fsk_demod.o ui.o
+OBJS = bsdtty.o fsk_demod.o ui.o fldigi_xmlrpc.o
 
 .ifndef WITHOUT_OUTRIGGER
 bsdtty: or-lib/liboutrigger.a
