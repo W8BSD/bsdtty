@@ -272,20 +272,20 @@ handle_request(int si)
 			send_xmlrpc_response(csocks[si], "string", "RX");
 	}
 	else if (strcmp(cmd, "text.clear_tx") == 0) {
+		send_xmlrpc_response(csocks[si], NULL, NULL);
 		tx_buflen = 0;
 		tx_buffer[0] = 0;
-		send_xmlrpc_response(csocks[si], NULL, NULL);
 	}
 	else if (strcmp(cmd, "text.add_tx") == 0) {
+		send_xmlrpc_response(csocks[si], NULL, NULL);
 		if (param[0])
 			add_tx(param);
-		send_xmlrpc_response(csocks[si], NULL, NULL);
 	}
 	else if (strcmp(cmd, "main.tx") == 0) {
+		send_xmlrpc_response(csocks[si], NULL, NULL);
 		send_string(tx_buffer);
 		tx_buflen = 0;
 		tx_buffer[0] = 0;
-		send_xmlrpc_response(csocks[si], NULL, NULL);
 	}
 	else if (strcmp(cmd, "text.get_rx_length") == 0) {
 		sprintf(buf, "%zu", rx_offset + rx_buflen);
@@ -459,6 +459,9 @@ void
 fldigi_add_rx(char ch)
 {
 	char *tmp;
+
+	if (ncsocks == 0 && nlsocks == 0)
+		return;
 
 	if (rx_buflen + 1 >= rx_bufsz) {
 		tmp = realloc(rx_buffer, rx_bufsz ? rx_bufsz * 2 : 128);
