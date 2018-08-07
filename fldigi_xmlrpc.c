@@ -33,6 +33,7 @@
 #include <sys/socket.h>
 
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 
 #include <ctype.h>
 #include <errno.h>
@@ -59,14 +60,18 @@ static size_t rx_buflen;
 static size_t rx_offset;
 static const char * base64alphabet = 
  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+static char *req_buffer;
+static size_t req_bufsz;
+static size_t req_buflen;
 
 static int add_char(char *pos, char ch, int done, char *end);
 static void add_tx(const char *str);
 static int b64_encode(char *target, size_t tlen, const char *source, size_t slen);
-static void handle_request(int si);
+static bool handle_request(int si);
 static void remove_sock(int *sarr, size_t *n, int si);
 static void send_xmlrpc_response(int sock, char *type, char *value);
-static int sock_readln(int sock, char *buf, size_t bufsz);
+static int sock_readbuf(int *sock, char **buf, size_t *bufsz, size_t *buflen, long len);
+static int sock_readln(int *sock, char *buf, size_t bufsz);
 
 void
 setup_xmlrpc(void)
@@ -138,6 +143,7 @@ handle_xmlrpc(void)
 	socklen_t salen;
 	int sock;
 	int *tmp;
+	int opt;
 
 	/* First, service listening sockets */
 	if (nlsocks > 0) {
@@ -161,6 +167,8 @@ handle_xmlrpc(void)
 						else {
 							csocks = tmp;
 							csocks[ncsocks - 1] = sock;
+							opt = 1;
+							setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
 						}
 					}
 				}
@@ -178,8 +186,12 @@ handle_xmlrpc(void)
 		}
 		if (select(msock + 1, &rfds, NULL, NULL, &tv) > 0) {
 			for (i = 0; i < ncsocks; i++) {
-				if (FD_ISSET(csocks[i], &rfds))
-					handle_request(i);
+				if (FD_ISSET(csocks[i], &rfds)) {
+					if (!handle_request(i)) {
+						remove_sock(csocks, &ncsocks, i);
+						i--;
+					}
+				}
 			}
 		}
 	}
@@ -188,7 +200,7 @@ handle_xmlrpc(void)
 /*
  * Super fragile...
  */
-static void
+static bool
 handle_request(int si)
 {
 	char buf[1024];
@@ -197,49 +209,50 @@ handle_request(int si)
 	char *p = param;
 	bool headers = true;
 	long content_len = -1;
-	long offset = 0;
+	long start = 0;
+	long end = 0;
 	char *c;
+	char *b;
 	int ret;
 	size_t bytes;
 
 	for (bytes = 0; content_len == -1 || bytes < content_len;) {
-		if ((ret = sock_readln(csocks[si], buf, sizeof(buf))) < 0)
-			remove_sock(csocks, &ncsocks, si);
-		else {
-			if (headers) {
-				if (buf[0] == 0) {
-					headers = false;
-					continue;
-				}
-				if (strncasecmp(buf, "Content-Length:", 15) == 0) {
-					c = strrchr(buf, ':');
-					if (c == NULL)
-						continue;
-					c++;
-					while (isspace(*c))
-						c++;
-					content_len = strtol(c, NULL, 10);
-					if (content_len == 0)
-						content_len = -1;
-				}
-			}
-			else if (ret == 0) {
+		if (headers) {
+			if ((ret = sock_readln(&csocks[si], buf, sizeof(buf))) < 0 || csocks[si] == -1)
 				break;
+			if (buf[0] == 0) {
+				headers = false;
+				continue;
 			}
-			else {
-				bytes += ret;
-				if (cmd[0] == 0) {
-					c = strstr(buf, "<methodName>");
-					if (c != NULL) {
-						c += 12;
-						strncpy(cmd, c, sizeof(cmd));
-						cmd[sizeof(cmd) - 1] = 0;
-						c = strchr(cmd, '<');
-						if (c != NULL)
-							*c = 0;
-					}
+			if (strncasecmp(buf, "Content-Length:", 15) == 0) {
+				c = strrchr(buf, ':');
+				if (c == NULL)
+					continue;
+				c++;
+				while (isspace(*c))
+					c++;
+				content_len = strtol(c, NULL, 10);
+				if (content_len == 0)
+					content_len = -1;
+			}
+		}
+		else {
+			if ((ret = sock_readbuf(&csocks[si], &req_buffer, &req_bufsz, &req_buflen, content_len)) == -1)
+				break;
+			bytes += ret;
+			if (cmd[0] == 0) {
+				c = strstr(req_buffer, "<methodName>");
+				if (c != NULL) {
+					c += 12;
+					strncpy(cmd, c, sizeof(cmd));
+					cmd[sizeof(cmd) - 1] = 0;
+					c = strchr(cmd, '<');
+					if (c != NULL)
+						*c = 0;
 				}
-				c = strstr(buf, "<value>");
+			}
+			for (c = req_buffer; c != NULL;) {
+				c = strstr(c, "<value>");
 				if (c != NULL) {
 					c += 7;
 					c = strchr(c, '>');
@@ -247,16 +260,18 @@ handle_request(int si)
 						c++;
 						strncpy(p, c, sizeof(param) - (p - param));
 						param[sizeof(param) - 1] = 0;
-						c = strchr(p, '<');
-						if (c != NULL) {
-							*c = 0;
-							p = c + 1;
+						b = strchr(p, '<');
+						if (b != NULL) {
+							*b = 0;
+							p = b + 1;
 							if (p >= param + sizeof(param))
 								p = param + sizeof(param) - 1;
 						}
 					}
 				}
 			}
+			if (csocks[si] == -1)
+				break;
 		}
 	}
 
@@ -292,24 +307,24 @@ handle_request(int si)
 		send_xmlrpc_response(csocks[si], "int", buf);
 	}
 	else if (strcmp(cmd, "text.get_rx") == 0) {
-		offset = strtol(param, &c, 10);
-		content_len = strtol(c + 1, NULL, 10);
+		start = strtol(param, &c, 10);
+		end = strtol(c + 1, NULL, 10);
 		/*
 		 * TODO: TLF uses start:end, not start:len as documented
 		 * on fldigi website...
 		 */
-		content_len -= offset;
-		if (rx_offset <= offset) {
-			if (content_len + offset <= rx_offset + rx_buflen) {
-				b64_encode(buf, sizeof(buf), rx_buffer + (offset - rx_offset), content_len);
+		end -= start;
+		if (rx_offset <= start) {
+			if (end + start <= rx_offset + rx_buflen) {
+				b64_encode(buf, sizeof(buf), rx_buffer + (start - rx_offset), end);
 				send_xmlrpc_response(csocks[si], "base64", buf);
-				memmove(rx_buffer, rx_buffer + (offset - rx_offset) + content_len, strlen(rx_buffer + (offset - rx_offset)));
-				rx_buflen -= (offset - rx_offset) + content_len;
-				rx_offset += (offset - rx_offset) + content_len;
+				memmove(rx_buffer, rx_buffer + (start - rx_offset) + end, strlen(rx_buffer + (start - rx_offset)));
+				rx_buflen -= (start - rx_offset) + end;
+				rx_offset += (start - rx_offset) + end;
 				
 			}
 			else
-				printf_errno("invalid rxbuf request length %ld + %ld (%zu + %zu)", offset, content_len, rx_offset, rx_buflen);
+				printf_errno("invalid rxbuf request length %ld + %ld (%zu + %zu)", start, end, rx_offset, rx_buflen);
 		}
 		else
 			printf_errno("invalid rxbuf request offset");
@@ -324,12 +339,13 @@ handle_request(int si)
 		send_xmlrpc_response(csocks[si], "int", buf);
 	}
 
-	if (bytes != content_len && si != -1)
-		remove_sock(csocks, &ncsocks, si);
+	if (bytes != content_len || csocks[si] == -1)
+		return false;
+	return true;
 }
 
 static int
-sock_readln(int sock, char *buf, size_t bufsz)
+sock_readln(int *sock, char *buf, size_t bufsz)
 {
 	fd_set rd;
 	int i;
@@ -339,22 +355,30 @@ sock_readln(int sock, char *buf, size_t bufsz)
 
 	for (i = 0; i < bufsz - 1; i++) {
 		FD_ZERO(&rd);
-		FD_SET(sock, &rd);
+		FD_SET(*sock, &rd);
 		tv.tv_sec = 0;
 		tv.tv_usec = 100000;
-		switch(select(sock+1, &rd, NULL, NULL, &tv)) {
+		switch(select(*sock+1, &rd, NULL, NULL, &tv)) {
 			case -1:
+				close(*sock);
+				*sock = -1;
 				if (errno == EINTR)
 					continue;
 				return -1;
 			case 0:
 				goto done;
 			case 1:
-				ret = recv(sock, buf + i, 1, MSG_WAITALL);
-				if (ret == -1)
+				ret = recv(*sock, buf + i, 1, MSG_WAITALL);
+				if (ret == -1) {
+					close(*sock);
+					*sock = -1;
 					return -1;
-				if (ret == 0)
+				}
+				if (ret == 0) {
+					close(*sock);
+					*sock = -1;
 					goto done;
+				}
 				bytes++;
 				if (buf[i] == '\n')
 					goto done;
@@ -370,10 +394,67 @@ done:
 	return bytes;
 }
 
+static int
+sock_readbuf(int *sock, char **buf, size_t *bufsz, size_t *buflen, long len)
+{
+	fd_set rd;
+	int i;
+	int ret;
+	struct timeval tv;
+	char *tmp;
+
+	if (len > 0) {
+		if (len >= *bufsz) {
+			tmp = realloc(*buf, len + 1);
+			if (tmp == NULL)
+				return -1;
+			*buf = tmp;
+			*bufsz = len + 1;
+		}
+	}
+	else
+		return -1;
+
+	for (i = 0; i < len;) {
+		FD_ZERO(&rd);
+		FD_SET(*sock, &rd);
+		tv.tv_sec = 0;
+		tv.tv_usec = 100000;
+		switch(select(*sock+1, &rd, NULL, NULL, &tv)) {
+			case -1:
+				if (errno == EINTR)
+					continue;
+				return -1;
+			case 0:
+				close(*sock);
+				*sock = -1;
+				goto done;
+			case 1:
+				ret = recv(*sock, (*buf) + i, len > 0 ? len : 1, MSG_WAITALL);
+				if (ret == -1) {
+					close(*sock);
+					*sock = -1;
+					return -1;
+				}
+				if (ret == 0) {
+					close(*sock);
+					*sock = -1;
+					goto done;
+				}
+				i += ret;
+				break;
+		}
+	}
+done:
+	(*buf)[i] = 0;
+	return i;
+}
+
 static void
 remove_sock(int *sarr, size_t *n, int si)
 {
-	close(sarr[si]);
+	if (sarr[si] != -1)
+		close(sarr[si]);
 	if (si != *n - 1) {
 		memmove(&sarr[si], &sarr[si + 1],
 		    sizeof(*sarr) * (*n - si - 1));
@@ -572,4 +653,3 @@ b64_encode(char *target, size_t tlen, const char *source, size_t slen)
 
 	return result;
 }
-
