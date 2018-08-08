@@ -1314,7 +1314,7 @@ update_serial(unsigned value)
 static void
 update_waterfall(void)
 {
-	const char *chars = " .',\";:+*|=$#";
+	const char chars[] = " .',\";:+*|=$#";
 	int i;
 	double min = INFINITY;
 	double max = 0;
