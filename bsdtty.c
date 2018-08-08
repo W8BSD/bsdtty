@@ -74,7 +74,7 @@ static void setup_defaults(void);
 struct bt_settings settings = {
 	.baud_numerator = 1000,
 	.baud_denominator = 22,
-	.dsp_rate = 16000,
+	.dsp_rate = 8000,
 	.bp_filter_q = 10,
 	.lp_filter_q = 0.5,
 	.mark_freq = 2125,
@@ -591,10 +591,13 @@ do_tx(void)
 				display_charset(charsets[settings.charset].name);
 				break;
 			case ']':
+				// TODO: CR is expanded to CRLF...
+#if 0
 				settings.charset++;
 				if (settings.charset == sizeof(charsets) / sizeof(charsets[0]))
 					settings.charset = 0;
 				display_charset(charsets[settings.charset].name);
+#endif
 				break;
 			case '\\':
 				reset_tuning_aid();

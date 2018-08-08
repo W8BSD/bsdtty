@@ -51,7 +51,6 @@ Special characters can be used in macros:
 | \         | Your callsign   |
 | `         | Their callsign  |
 | [         | Carriage return |
-| ]         | Line feed       |
 | ~         | Tab (toggle TX) |
 | _         | Trailing space  |
 
@@ -61,3 +60,4 @@ Outstanding issues:
 * I should idle with LTRS, not a mark signal... super tricky.
 * Really needs a manpage.
 * Add CQRLOG integration.
+* Deal with explicit LFs in macros... CR is expanded to CRLF

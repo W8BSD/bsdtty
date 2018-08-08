@@ -527,6 +527,8 @@ add_tx(const char *str)
 				else
 					printf_errno("unhandled entity: %s", c);
 				break;
+			case '\n':
+				*(b++) = '\r';
 			default:
 				*(b++) = *c;
 				break;
