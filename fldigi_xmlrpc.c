@@ -69,6 +69,7 @@ static void add_tx(const char *str);
 static int b64_encode(char *target, size_t tlen, const char *source, size_t slen);
 static bool handle_request(int si);
 static void remove_sock(int *sarr, size_t *n, int si);
+static void send_xmlrpc_fault(int sock);
 static void send_xmlrpc_response(int sock, char *type, char *value);
 static int sock_readbuf(int *sock, char **buf, size_t *bufsz, size_t *buflen, long len);
 static int sock_readln(int *sock, char *buf, size_t bufsz);
@@ -340,6 +341,8 @@ handle_request(int si)
 		sprintf(buf, "%d", (int)((settings.mark_freq + settings.space_freq) / 2));
 		send_xmlrpc_response(csocks[si], "int", buf);
 	}
+	else
+		send_xmlrpc_fault(csocks[si]);
 
 	if (bytes != content_len || csocks[si] == -1)
 		return false;
@@ -656,4 +659,12 @@ b64_encode(char *target, size_t tlen, const char *source, size_t slen)
 		result = outp - target;
 
 	return result;
+}
+
+static void
+send_xmlrpc_fault(int sock)
+{
+	char *buf = "HTTP/1.1 501 Crappy Server\r\nConnection: Keep-Alive\r\nContent-Type: text/xml\r\nContent-Length: 293\r\n\r\n<?xml version=\"1.0\"?>\n<methodResponse><fault><value><struct><member><name>faultCode</name><value><int>73</int></value></member><member><name>faultString</name><value><string>This server is too crap to even know what you want.</string></value></member></struct></value></fault></methodResponse>";
+
+	send(sock, buf, strlen(buf), 0);
 }
