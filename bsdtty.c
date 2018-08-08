@@ -55,7 +55,6 @@
 #include "iniparser/src/dictionary.h"
 #endif
 
-static bool do_macro(int fkey);
 static bool do_tx(void);
 static void done(void);
 static bool get_rts(void);
@@ -96,14 +95,15 @@ bool reverse = false;
 /* Log thing */
 static FILE *log_file;
 
-static char *their_callsign;
 static char sync_buffer[9];
 static int sb_chars;
 static int sync_squelch = 1;
-int rigctld_socket = -1;
-unsigned serial;
+static int rigctld_socket = -1;
 static bool rxfigs;
 static bool txfigs;
+
+char *their_callsign;
+unsigned serial;
 
 struct charset {
 	const char *chars;
@@ -631,7 +631,7 @@ send_string(const char *str)
 		send_char(*str);
 }
 
-static bool
+bool
 do_macro(int fkey)
 {
 	size_t len;

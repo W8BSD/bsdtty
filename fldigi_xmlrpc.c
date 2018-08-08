@@ -45,6 +45,7 @@
 #include <unistd.h>
 
 #include "bsdtty.h"
+#include "fsk_demod.h"
 #include "ui.h"
 
 static int *lsocks;
@@ -341,6 +342,218 @@ handle_request(int si)
 		sprintf(buf, "%d", (int)((settings.mark_freq + settings.space_freq) / 2));
 		send_xmlrpc_response(csocks[si], "int", buf);
 	}
+	/* The rest are for completeness... */
+	else if (strcmp(cmd, "fldigi.name") == 0) {
+		send_xmlrpc_response(csocks[si], "string", "bsdtty");
+	}
+	else if (strcmp(cmd, "modem.get_name") == 0) {
+		send_xmlrpc_response(csocks[si], "string", "RTTY");
+	}
+	else if (strcmp(cmd, "modem.get_names") == 0) {
+		send_xmlrpc_response(csocks[si], "array", "<data><value>RTTY</value></data>");
+	}
+	else if (strcmp(cmd, "modem.id") == 0) {
+		send_xmlrpc_response(csocks[si], "int", "0");
+	}
+	else if (strcmp(cmd, "modem.get_max_id") == 0) {
+		send_xmlrpc_response(csocks[si], "int", "0");
+	}
+	else if (strcmp(cmd, "modem.set_by_name") == 0) {
+		if (strcmp(param, "RTTY"))
+			send_xmlrpc_fault(csocks[si]);
+		else
+			send_xmlrpc_response(csocks[si], "string", "RTTY");
+	}
+	else if (strcmp(cmd, "modem.set_by_id") == 0) {
+		if (strcmp(param, "0"))
+			send_xmlrpc_fault(csocks[si]);
+		else
+			send_xmlrpc_response(csocks[si], "string", "0");
+	}
+	else if (strcmp(cmd, "modem.get_reverse") == 0) {
+		sprintf(buf, "%d", reverse);
+		send_xmlrpc_response(csocks[si], "boolean", buf);
+	}
+	else if (strcmp(cmd, "modem.set_reverse") == 0) {
+		sprintf(buf, "%d", reverse);
+		if (atoi(param) != reverse)
+			toggle_reverse(&reverse);
+		send_xmlrpc_response(csocks[si], "boolean", buf);
+	}
+	else if (strcmp(cmd, "modem.toggle_reverse") == 0) {
+		toggle_reverse(&reverse);
+		sprintf(buf, "%d", reverse);
+		send_xmlrpc_response(csocks[si], "boolean", buf);
+	}
+	else if (strcmp(cmd, "modem.run_macro") == 0) {
+		ret = atoi(param);
+		if (ret >= 0 && ret < sizeof(settings.macros) / sizeof(*settings.macros)) {
+			send_xmlrpc_response(csocks[si], NULL, NULL);
+			do_macro(ret + 1);
+		}
+		else
+			send_xmlrpc_fault(csocks[si]);
+	}
+	else if (strcmp(cmd, "modem.get_max_macro_id") == 0) {
+		sprintf(buf, "%zu", sizeof(settings.macros) / sizeof(*settings.macros) - 1);
+		send_xmlrpc_response(csocks[si], "int", buf);
+	}
+	else if (strcmp(cmd, "log.get_serial_number_sent") == 0) {
+		sprintf(buf, "%03d", serial);
+		send_xmlrpc_response(csocks[si], "string", buf);
+	}
+	else if (strcmp(cmd, "log.set_call") == 0) {
+		captured_callsign(param);
+		send_xmlrpc_response(csocks[si], NULL, NULL);
+	}
+	else if (strcmp(cmd, "fldigi.list") == 0) {
+		send_xmlrpc_response(csocks[si], "array", "<data>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Lists all supported commands</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>fldigi.list</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>A:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Sets RX mode (disables TX)</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>main.rx</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>n:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Returns \"RX\" in RX mode, \"TX\" in TX mode</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>main.get_trx_state</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>s:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Clears the TX buffer</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>text.clear_tx</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>n:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Adds string to the TX buffer</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>text.add_tx</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>n:s</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Sets TX mode (ie: PTT) main.rx to turn of PTT</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>main.tx</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>n:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Gets the total number of bytes decoded so far</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>text.get_rx_length</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>i:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Returns the string from start to end.  In fldigi this is start and length, but TLF expects start:end</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>text.get_rx</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>6:ii</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Returns the average of the mark and space frequencies</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>modem.get_carrier</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>i:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Not actually supported, simply returns the average of the mark and space frequencies</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>modem.set_carrier</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>i:i</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Returns \"bsdtty\"</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>fldigi.name</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>s:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Returns \"RTTY\"</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>modem.get_name</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>s:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Returns an array containing only \"RTTY\"</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>modem.get_names</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>A:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Returns 0 (index into modem list)</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>modem.id</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>i:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Returns 0 (only one modem supported)</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>modem.get_max_id</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>i:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>If the name isn't \"RTTY\" returns a fault, otherwise, returns \"RTTY\"</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>modem.set_by_name</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>s:s</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>If the parameter isn't 0, returns a fault.  Otherwise, returns zero.</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>modem.set_by_id</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>i:i</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Returns 1 in reverse mode, 0 in normal mode</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>modem.get_reverse</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>b:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Sets the reverse state, returns old state</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>modem.set_reverse</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>b:b</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Toggles reverse state, returns new start</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>modem.toggle_reverse</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>b:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Runs the specified macro (0-9)</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>modem.run_macro</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>n:i</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Returns 9</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>modem.get_max_macro_id</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>i:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Returns the current serial number as a string</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>log.get_serial_number_sent</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>s:n</value></member></struct></value>"
+		    "<value><struct><member><name>help</name>"
+		                       "<value>Sets their call</value></member>"
+		                   "<member><name>name</name>"
+		                       "<value>log.set_call</value></member>"
+		                   "<member><name>signature</name>"
+		                       "<value>n:s</value></member></struct></value>"
+		    "</data>");
+	}
 	else
 		send_xmlrpc_fault(csocks[si]);
 
@@ -470,16 +683,19 @@ remove_sock(int *sarr, size_t *n, int si)
 static void
 send_xmlrpc_response(int sock, char *type, char *value)
 {
-	char buf[1024];
+	char *buf;
 
-	sprintf(buf, "HTTP/1.1 200 OK\r\nConnection: Keep-Alive\r\nContent-Type: text/xml\r\nContent-Length: %lu\r\n\r\n<?xml version=\"1.0\"?>\n<methodResponse><params><param><value><", 61+(type == NULL ? 5 : (strlen(type) * 2) + strlen(value) + 4) + 42);
+	asprintf(&buf, "HTTP/1.1 200 OK\r\nConnection: Keep-Alive\r\nContent-Type: text/xml\r\nContent-Length: %lu\r\n\r\n<?xml version=\"1.0\"?>\n<methodResponse><params><param><value><%s%s%s%s%s%s</value></param></params></methodResponse>", 61+(type == NULL ? 5 : (strlen(type) * 2) + strlen(value) + 4) + 42, type == NULL ? "nil/>" : type, type == NULL ? "" : ">", value == NULL ? "" : value, type == NULL ? "" : "</", type == NULL ? "" : type, type == NULL ? "" : ">");
+#if 0
 	if (type == NULL)
 		strcat(buf, "nil/>");
 	else {
 		sprintf(strchr(buf, 0), "%s>%s</%s>", type, value, type);
 	}
 	strcat(buf, "</value></param></params></methodResponse>");
+#endif
 	send(sock, buf, strlen(buf), 0);
+	free(buf);
 }
 
 static void

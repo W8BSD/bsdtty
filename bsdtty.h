@@ -31,6 +31,8 @@ struct bt_settings {
 
 extern struct bt_settings settings;
 extern bool reverse;
+extern char *their_callsign;
+extern unsigned serial;
 
 char asc2baudot(int asc, bool figs);
 char baudot2asc(int baudot, bool figs);
@@ -44,5 +46,6 @@ const char *get_rig_mode(char *buf, size_t sz);
 void send_string(const char *str);
 bool get_rig_ptt(void);
 bool set_rig_ptt(bool val);
+bool do_macro(int fkey);
 
 #endif
