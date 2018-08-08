@@ -37,6 +37,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <netdb.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -214,7 +215,7 @@ handle_request(int si)
 	bool headers = true;
 	long content_len = -1;
 	long start = 0;
-	long end = 0;
+	long len = 0;
 	char *c;
 	char *b;
 	int ret;
@@ -283,6 +284,7 @@ handle_request(int si)
 	if (strcmp(cmd, "main.rx") == 0) {
 		if (get_rig_ptt())
 			send_string("\t");
+		send_xmlrpc_response(csocks[si], NULL, NULL);
 	}
 	else if (strcmp(cmd, "main.get_trx_state") == 0) {
 		if (get_rig_ptt())
@@ -312,26 +314,30 @@ handle_request(int si)
 	}
 	else if (strcmp(cmd, "text.get_rx") == 0) {
 		start = strtol(param, &c, 10);
-		end = strtol(c + 1, NULL, 10);
+		len = strtol(c + 1, NULL, 10);
 		/*
 		 * TODO: TLF uses start:end, not start:len as documented
-		 * on fldigi website...
+		 * on fldigi website... but since end is always greater
+		 * then len, that "works" since fldigi truncates. 
+		 * Unfortuantely, we're throwing away the rx buffer as
+		 * soon as we send it, so we need to respect this.
 		 */
-		end -= start;
+		if (len > rx_buflen + rx_offset - start)
+			len = start - len;
 		if (rx_offset <= start) {
-			if (end + start <= rx_offset + rx_buflen) {
-				b64_encode(buf, sizeof(buf), rx_buffer + (start - rx_offset), end);
+			if (len + start <= rx_offset + rx_buflen) {
+				b64_encode(buf, sizeof(buf), rx_buffer + (start - rx_offset), len);
 				send_xmlrpc_response(csocks[si], "base64", buf);
-				memmove(rx_buffer, rx_buffer + (start - rx_offset) + end, strlen(rx_buffer + (start - rx_offset)));
-				rx_buflen -= (start - rx_offset) + end;
-				rx_offset += (start - rx_offset) + end;
+				memmove(rx_buffer, rx_buffer + (start - rx_offset) + len, strlen(rx_buffer + (start - rx_offset)));
+				rx_buflen -= (start - rx_offset) + len;
+				rx_offset += (start - rx_offset) + len;
 				
 			}
 			else
-				printf_errno("invalid rxbuf request length %ld + %ld (%zu + %zu)", start, end, rx_offset, rx_buflen);
+				printf_errno("invalid rxbuf request length %ld + %ld (%zu + %zu)", start, len, rx_offset, rx_buflen);
 		}
 		else
-			printf_errno("invalid rxbuf request offset");
+			printf_errno("invalid rxbuf request offset (%ld:%ld from %zu:%zu)", start, len, rx_offset, rx_offset + rx_buflen);
 	}
 	else if (strcmp(cmd, "modem.get_carrier") == 0) {
 		sprintf(buf, "%d", (int)((settings.mark_freq + settings.space_freq) / 2));
@@ -405,6 +411,26 @@ handle_request(int si)
 	else if (strcmp(cmd, "log.set_call") == 0) {
 		captured_callsign(param);
 		send_xmlrpc_response(csocks[si], NULL, NULL);
+	}
+	else if (strcmp(cmd, "log.get_call") == 0) {
+		send_xmlrpc_response(csocks[si], "string", their_callsign ? their_callsign : "");
+	}
+	else if (strcmp(cmd, "log.get_exchange") == 0) {
+		// TODO: Ignored
+		send_xmlrpc_response(csocks[si], "string", "");
+	}
+	else if (strcmp(cmd, "log.set_exchange") == 0) {
+		// TODO: Ignored
+		send_xmlrpc_response(csocks[si], NULL, NULL);
+	}
+	else if (strcmp(cmd, "rig.set_mode") == 0) {
+		// TODO: Ignored.
+		send_xmlrpc_response(csocks[si], NULL, NULL);
+	}
+	else if (strcmp(cmd, "rig.set_frequency") == 0) {
+		// TODO: Ignored.
+		sprintf(buf, "%" PRIu64, get_rig_freq());
+		send_xmlrpc_response(csocks[si], "double", buf);
 	}
 	else if (strcmp(cmd, "fldigi.list") == 0) {
 		send_xmlrpc_response(csocks[si], "array", "<data>"
@@ -685,7 +711,7 @@ send_xmlrpc_response(int sock, char *type, char *value)
 {
 	char *buf;
 
-	asprintf(&buf, "HTTP/1.1 200 OK\r\nConnection: Keep-Alive\r\nContent-Type: text/xml\r\nContent-Length: %lu\r\n\r\n<?xml version=\"1.0\"?>\n<methodResponse><params><param><value><%s%s%s%s%s%s</value></param></params></methodResponse>", 61+(type == NULL ? 5 : (strlen(type) * 2) + strlen(value) + 4) + 42, type == NULL ? "nil/>" : type, type == NULL ? "" : ">", value == NULL ? "" : value, type == NULL ? "" : "</", type == NULL ? "" : type, type == NULL ? "" : ">");
+	asprintf(&buf, "HTTP/1.1 200 OK\r\nConnection: Keep-Alive\r\nContent-Type: text/xml\r\nContent-Length: %lu\r\n\r\n<?xml version=\"1.0\"?>\n<methodResponse><params><param><value><%s%s%s%s%s%s</value></param></params></methodResponse>", 61+(type == NULL ? 5 : ((strlen(type) * 2) + strlen(value) + 4)) + 42, type == NULL ? "nil/>" : type, type == NULL ? "" : ">", value == NULL ? "" : value, type == NULL ? "" : "</", type == NULL ? "" : type, type == NULL ? "" : ">");
 #if 0
 	if (type == NULL)
 		strcat(buf, "nil/>");
