@@ -105,6 +105,9 @@ static int16_t *dsp_buf;
 static int head;
 static int tail;	// Empty when equal
 static size_t dsp_bufmax;
+static struct bq_filter **waterfall_bp;
+static struct bq_filter **waterfall_lp;
+size_t waterfall_width;
 
 /* AFSK buffers */
 /*
@@ -126,9 +129,7 @@ enum afsk_bit last_afsk_bit = AFSK_UNKNOWN;
 static int avail(int head, int tail, int max);
 static double bq_filter(double value, struct bq_filter *filter);
 static struct bq_filter * calc_apf_coef(double f0, double q);
-#ifndef MATCHED_FILTERS
 static struct bq_filter * calc_bpf_coef(double f0, double q);
-#endif
 static struct bq_filter * calc_lpf_coef(double f0, double q);
 static void create_filters(void);
 static double current_value(void);
@@ -148,6 +149,7 @@ static double fir_filter(int16_t value, struct fir_filter *f);
 static void generate_afsk_samples(void);
 static void adjust_wave(struct afsk_buf *buf, double start_phase);
 static void generate_sine(double freq, struct afsk_buf *buf);
+static void feed_waterfall(int16_t value);
 
 void
 setup_rx(void)
@@ -485,6 +487,7 @@ current_value(void)
 #endif
 	emv = bq_filter(mv*mv, mlpfilt);
 	esv = bq_filter(sv*sv, slpfilt);
+	feed_waterfall(dsp_buf[tail]);
 	update_tuning_aid(mv, sv);
 	a = bq_filter((double)dsp_buf[tail] * dsp_buf[tail], afilt);
 	audio_meter((int16_t)sqrt(a));
@@ -575,7 +578,6 @@ calc_lpf_coef(double f0, double q)
 	return ret;
 }
 
-#ifndef MATCHED_FILTERS
 static struct bq_filter *
 calc_bpf_coef(double f0, double q)
 {
@@ -610,7 +612,6 @@ calc_bpf_coef(double f0, double q)
 
 	return ret;
 }
-#endif
 
 static struct bq_filter *
 calc_apf_coef(double f0, double q)
@@ -977,4 +978,78 @@ end_afsk_tx(void)
 	}
 	if (ioctl(dsp_afsk, SNDCTL_DSP_SYNC, NULL) == -1)
 		printf_errno("syncing AFSK playback");
+}
+
+void
+setup_spectrum_filters(int buckets)
+{
+	int i;
+	double freq_step = 4000 / (buckets + 1);
+	double freq;
+	double q;
+
+	if (waterfall_bp) {
+		for (i = 0; i < waterfall_width; i++) {
+			if (waterfall_bp[i])
+				free_bq_filter(waterfall_bp[i]);
+		}
+		free(waterfall_bp);
+		waterfall_bp = NULL;
+	}
+	if (waterfall_lp) {
+		for (i = 0; i < waterfall_width; i++) {
+			if (waterfall_lp[i])
+				free_bq_filter(waterfall_lp[i]);
+		}
+		free(waterfall_lp);
+		waterfall_lp = NULL;
+	}
+	waterfall_width = 0;
+	if (buckets == 0)
+		return;
+	waterfall_bp = calloc(sizeof(*waterfall_bp), buckets);
+	if (waterfall_bp == NULL) {
+		waterfall_width = 0;
+		return;
+	}
+	waterfall_lp = calloc(sizeof(*waterfall_lp), buckets);
+	if (waterfall_lp == NULL) {
+		free(waterfall_bp);
+		waterfall_width = 0;
+		return;
+	}
+	waterfall_width = buckets;
+	for (i = 0; i < buckets; i++) {
+		freq = (freq_step / 2) + freq_step * i;
+		q = freq / freq_step;
+		waterfall_bp[i] = calc_bpf_coef(freq, q);
+		if (waterfall_bp[i] == NULL) {
+			setup_spectrum_filters(0);
+			return;
+		}
+		waterfall_lp[i] = calc_bpf_coef(1, 0.5);
+	}
+	return;
+}
+
+static void
+feed_waterfall(int16_t value)
+{
+	int i;
+	double v;
+
+	for (i = 0; i < waterfall_width; i++) {
+		v = bq_filter(value, waterfall_bp[i]);
+		bq_filter(v * v, waterfall_lp[i]);
+	}
+}
+
+double
+get_waterfall(int bucket)
+{
+	if (bucket < waterfall_width)
+		return waterfall_lp[bucket]->buf[0];
+	if (bucket > 0)
+		return waterfall_lp[bucket - 1]->buf[0];
+	return 0;
 }

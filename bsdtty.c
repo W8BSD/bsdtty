@@ -602,6 +602,10 @@ do_tx(void)
 			case '\\':
 				reset_tuning_aid();
 				break;
+			case 23:
+				if (!get_rts())
+					toggle_tuning_aid();
+				break;
 			case 0x7f:
 			case 0x08:
 				if (!get_rts())

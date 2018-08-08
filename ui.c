@@ -39,8 +39,10 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "bsdtty.h"
+#include "fsk_demod.h"
 #include "ui.h"
 
 /* UI Stuff */
@@ -55,6 +57,7 @@ static int tx_height;
 static bool reset_tuning;
 static uint64_t last_freq;
 static char last_mode[16] = "";
+static bool waterfall;
 
 static bool baudot_char(int ch, const void *ab);
 static bool baudot_macro_char(int ch, const void *ab);
@@ -69,6 +72,7 @@ static void teardown_windows(void);
 static void toggle_figs(int y, int x);
 static void w_printf(WINDOW *win, const char *format, ...);
 static char *unescape_config(char *str, bool macro);
+static void update_waterfall(void);
 
 void
 setup_curses(void)
@@ -129,6 +133,11 @@ update_tuning_aid(double mark, double space)
 	int y, x;
 	chtype ch;
 	int och;
+
+	if (waterfall) {
+		update_waterfall();
+		return;
+	}
 
 	if (reset_tuning) {
 		if (buf) {
@@ -219,7 +228,6 @@ get_input(void)
 {
 	int ret;
 	MEVENT ev;
-
 	ret = wgetch(tx);
 	switch(ret) {
 		case ERR:
@@ -1301,4 +1309,66 @@ update_serial(unsigned value)
 	sprintf(buf, "%03u", value);
 	mvwaddstr(status, 0, 58, buf);
 	wrefresh(status);
+}
+
+static void
+update_waterfall(void)
+{
+	const char *chars = " .',\";:+*|=$#";
+	int i;
+	double min = INFINITY;
+	double max = 0;
+	double v;
+	static struct timespec last = {
+		.tv_sec = 0,
+		.tv_nsec = 0
+	};
+	struct timespec now;
+	struct timespec diff;
+	double d = 4000 / tx_width;
+
+	clock_gettime(CLOCK_MONOTONIC_FAST, &now);
+
+	if (last.tv_sec == 0) {
+		last = now;
+		return;
+	}
+	diff = now;
+	diff.tv_sec -= last.tv_sec;
+	diff.tv_nsec -= last.tv_nsec;
+	if (diff.tv_nsec < 0) {
+		diff.tv_sec -= 1;
+		diff.tv_nsec += 1000000000;
+	}
+	if (diff.tv_sec <= 0 && diff.tv_nsec < 100000000)
+		return;
+	scroll(tx);
+	last = now;
+	for (i = 0; i < tx_width; i++) {
+		v = get_waterfall(i);
+		if (v < min)
+			min = v;
+		if (v > max)
+			max = v;
+	}
+	for (i = 0; i < tx_width; i++)
+		mvwaddch(tx, tx_height - 2, i, chars[(int)((get_waterfall(i) - min) / ((max - min) / (sizeof(chars) - 1)))]);
+	mvwaddch(tx, tx_height - 1, settings.mark_freq / d, ACS_VLINE);
+	mvwaddch(tx, tx_height - 1, settings.space_freq / d, ACS_VLINE);
+	wrefresh(tx);
+}
+
+void
+toggle_tuning_aid()
+{
+	if (waterfall) {
+		setup_spectrum_filters(0);
+		wclear(tx);
+		waterfall = false;
+	}
+	else {
+		setup_spectrum_filters(tx_width);
+		wclear(tx);
+		waterfall = true;
+	}
 }

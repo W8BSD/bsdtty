@@ -15,5 +15,7 @@ void toggle_reverse(bool *rev);
 void send_afsk_char(char ch);
 void send_afsk_bit(enum afsk_bit bit);
 void end_afsk_tx(void);
+double get_waterfall(int bucket);
+void setup_spectrum_filters(int buckets);
 
 #endif

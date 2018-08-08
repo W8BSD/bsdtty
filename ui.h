@@ -32,5 +32,6 @@ void clear_rx_window(void);
 void update_squelch(int level);
 void update_captured_call(const char *call);
 void update_serial(unsigned value);
+void toggle_tuning_aid();
 
 #endif
