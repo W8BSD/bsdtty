@@ -148,6 +148,7 @@ handle_xmlrpc(void)
 	/* First, service listening sockets */
 	if (nlsocks > 0) {
 		msock = -1;
+		FD_ZERO(&rfds);
 		for (i = 0; i < nlsocks; i++) {
 			if (lsocks[i] > msock)
 				msock = lsocks[i];
@@ -179,6 +180,7 @@ handle_xmlrpc(void)
 	/* Now service connected sockets */
 	if (ncsocks > 0) {
 		msock = -1;
+		FD_ZERO(&rfds);
 		for (i = 0; i < ncsocks; i++) {
 			if (csocks[i] > msock)
 				msock = csocks[i];
