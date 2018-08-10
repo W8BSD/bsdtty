@@ -440,8 +440,6 @@ baudot2asc(int baudot, bool figs)
 static void
 handle_rx_char(char ch)
 {
-	if (log_file != NULL)
-		fwrite(&ch, 1, 1, log_file);
 	switch(ch) {
 		case 0:
 			return;
@@ -456,6 +454,8 @@ handle_rx_char(char ch)
 		case ' ':
 			rxfigs = false;	// USOS
 	}
+	if (log_file != NULL)
+		fwrite(&ch, 1, 1, log_file);
 	fldigi_add_rx(ch);
 	write_rx(ch);
 }
@@ -760,18 +760,12 @@ send_char(const char ch)
 		ach = baudot2asc(bch & 0x1f, bch & 0x20);
 		switch (ach) {
 			case 0:
-				if (log_file != NULL)
-					fwrite(&ach, 1, 1, log_file);
 				break;
 			case 0x0e:
 				txfigs = false;
-				if (log_file != NULL)
-					fwrite(&ach, 1, 1, log_file);
 				break;
 			case 0x0f:
 				txfigs = true;
-				if (log_file != NULL)
-					fwrite(&ach, 1, 1, log_file);
 				break;
 			case '\r':
 				write_tx('\r');
