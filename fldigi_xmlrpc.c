@@ -783,6 +783,11 @@ add_tx(const char *str)
 	}
 	*b = 0;
 	tx_buflen = b - tx_buffer;
+	if (get_rig_ptt()) {
+		send_string(tx_buffer);
+		tx_buflen = 0;
+		tx_buffer[0] = 0;
+	}
 }
 
 void
