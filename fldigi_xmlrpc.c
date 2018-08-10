@@ -327,10 +327,9 @@ handle_request(int si)
 			if (len + start <= rx_offset + rx_buflen) {
 				b64_encode(buf, sizeof(buf), rx_buffer + (start - rx_offset), len);
 				send_xmlrpc_response(csocks[si], "base64", buf);
-				memmove(rx_buffer, rx_buffer + (start - rx_offset) + len, strlen(rx_buffer + (start - rx_offset)));
+				memmove(rx_buffer, rx_buffer + (start - rx_offset) + len, strlen(rx_buffer + (start - rx_offset)) + 1);
 				rx_buflen -= (start - rx_offset) + len;
 				rx_offset += (start - rx_offset) + len;
-				
 			}
 			else
 				printf_errno("invalid rxbuf request length %ld + %ld (%zu + %zu)", start, len, rx_offset, rx_buflen);
