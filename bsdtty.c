@@ -693,7 +693,7 @@ send_char(const char ch)
 	bch = asc2baudot(ch, txfigs);
 	rts = get_rts();
 	if (ch == '\t' || (!rts && bch != 0)) {
-		rts ^= 1;
+		rts = !rts;
 		state = TIOCM_RTS;
 		if (!rts) {
 			send_rtty_char(4);
@@ -709,6 +709,15 @@ send_char(const char ch)
 			freq = get_rig_freq() + settings.freq_offset;
 			get_rig_mode(mode, sizeof(mode));
 		}
+		now = time(NULL);
+		if (log_file != NULL) {
+			if (freq == 0)
+				fprintf(log_file, "\n------- %s of transmission (%.24s) -------\n", rts ? "Start" : "End", ctime(&now));
+			else
+				fprintf(log_file, "\n------- %s of transmission (%.24s) on %s (%s) -------\n", rts ? "Start" : "End", ctime(&now), format_freq(freq), mode);
+			fflush(log_file);
+		}
+		mark_tx_extent(rts);
 		set_rig_ptt(rts);
 		if (rts) {
 			/* 
@@ -738,15 +747,6 @@ send_char(const char ch)
 			send_rtty_char(8);
 			send_rtty_char(2);
 		}
-		now = time(NULL);
-		if (log_file != NULL) {
-			if (freq == 0)
-				fprintf(log_file, "\n------- %s of transmission (%.24s) -------\n", rts ? "Start" : "End", ctime(&now));
-			else
-				fprintf(log_file, "\n------- %s of transmission (%.24s) on %s (%s) -------\n", rts ? "Start" : "End", ctime(&now), format_freq(freq), mode);
-			fflush(log_file);
-		}
-		mark_tx_extent(rts);
 	}
 	if (bch == 0)
 		return;
