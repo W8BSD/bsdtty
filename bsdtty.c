@@ -101,6 +101,8 @@ static int sync_squelch = 1;
 static int rigctld_socket = -1;
 static bool rxfigs;
 static bool txfigs;
+static bool send_start_crlf = true;
+static bool send_end_space = true;
 
 char *their_callsign;
 unsigned serial;
@@ -166,18 +168,31 @@ static struct rig *rig;
 
 int main(int argc, char **argv)
 {
+	char *c;
 	int ch;
 
 	load_config();
 
 #ifdef WITH_OUTRIGGER
-	while ((ch = getopt(argc, argv, "ac:C:d:D:f:hl:m:n:p:P:q:Q:r:R:s:t:T1:x:2:3:4:5:6:7:8:9:0:")) != -1) {
+	while ((ch = getopt(argc, argv, "ac:C:d:D:f:hl:m:n:N:p:P:q:Q:r:R:s:t:T1:x:2:3:4:5:6:7:8:9:0:")) != -1) {
 #else
-	while ((ch = getopt(argc, argv, "ac:C:d:f:hl:m:n:p:P:q:Q:r:s:t:T1:x:2:3:4:5:6:7:8:9:0:")) != -1) {
+	while ((ch = getopt(argc, argv, "ac:C:d:f:hl:m:n:N:p:P:q:Q:r:s:t:T1:x:2:3:4:5:6:7:8:9:0:")) != -1) {
 #endif
 		while (optarg && isspace(*optarg))
 			optarg++;
 		switch (ch) {
+			case 'N':
+				for (c = optarg; *c; c++) {
+					switch (*c) {
+						case 's':
+							send_start_crlf = false;
+							break;
+						case 'e':
+							send_end_space = false;
+							break;
+					}
+				}
+				break;
 			case 'x':
 				settings.xmlrpc_host = strdup(optarg);
 				break;
@@ -696,7 +711,8 @@ send_char(const char ch)
 		rts = !rts;
 		state = TIOCM_RTS;
 		if (!rts) {
-			send_rtty_char(4);
+			if (send_end_space)
+				send_rtty_char(4);
 			if (settings.afsk)
 				end_afsk_tx();
 			else {
@@ -744,8 +760,10 @@ send_char(const char ch)
 			 * repeated after the CRLF.
 			 */
 			send_rtty_char(0x1f);
-			send_rtty_char(8);
-			send_rtty_char(2);
+			if (send_start_crlf) {
+				send_rtty_char(8);
+				send_rtty_char(2);
+			}
 		}
 	}
 	if (bch == 0)
@@ -885,6 +903,10 @@ usage(const char *cmd)
 	       "-f  VFO frequency offset         170\n"
 	       "-x  XML-RPC host name            \"localhost\"\n"
 	       "-P  XML-RPC port                 7362\n"
+	       "-N[s][e]\n"
+	       "    Turns off automatically added text.  If 's' is included,\n"
+	       "    the starting CRLF is not sent.  If 'e' is included, the\n"
+	       "    ending space is not sent.\n"
 	       "\n", cmd);
 	exit(EXIT_FAILURE);
 }
