@@ -57,7 +57,7 @@ static int tx_height;
 static bool reset_tuning;
 static uint64_t last_freq;
 static char last_mode[16] = "";
-static bool waterfall;
+bool waterfall;
 
 static bool baudot_char(int ch, const void *ab);
 static bool baudot_macro_char(int ch, const void *ab);

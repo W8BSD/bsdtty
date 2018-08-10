@@ -14,6 +14,8 @@
 #define RTTY_KEY_UP		0x0104
 #define RTTY_KEY_DOWN		0x0105
 
+extern bool waterfall;
+
 void setup_curses(void);
 void update_tuning_aid(double mark, double space);
 void mark_tx_extent(bool start);
