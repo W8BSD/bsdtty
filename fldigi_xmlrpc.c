@@ -210,14 +210,12 @@ handle_request(int si)
 {
 	char buf[1024];
 	char cmd[128] = "";
-	char param[256] = "";
-	char *p = param;
 	bool headers = true;
 	long content_len = -1;
 	long start = 0;
 	long len = 0;
 	char *c;
-	char *b;
+	char *p;
 	int ret;
 	size_t bytes;
 
@@ -245,36 +243,37 @@ handle_request(int si)
 			if ((ret = sock_readbuf(&csocks[si], &req_buffer, &req_bufsz, &req_buflen, content_len)) == -1)
 				break;
 			bytes += ret;
-			if (cmd[0] == 0) {
-				c = strstr(req_buffer, "<methodName>");
-				if (c != NULL) {
-					c += 12;
-					strncpy(cmd, c, sizeof(cmd));
-					cmd[sizeof(cmd) - 1] = 0;
-					c = strchr(cmd, '<');
-					if (c != NULL)
-						*c = 0;
-				}
+			c = strstr(req_buffer, "<methodName>");
+			if (c != NULL) {
+				c += 12;
+				strncpy(cmd, c, sizeof(cmd));
+				cmd[sizeof(cmd) - 1] = 0;
+				c = strchr(cmd, '<');
+				if (c != NULL)
+					*c = 0;
 			}
-			for (c = req_buffer; c != NULL;) {
+			else {
+				cmd[0] = 0;
+				printf_errno("No command in XML-RPC request");
+			}
+			for (p = c = req_buffer; c != NULL;) {
 				c = strstr(c, "<value>");
 				if (c != NULL) {
 					c += 7;
 					c = strchr(c, '>');
 					if (c != NULL) {
 						c++;
-						strncpy(p, c, sizeof(param) - (p - param));
-						param[sizeof(param) - 1] = 0;
-						b = strchr(p, '<');
-						if (b != NULL) {
-							*b = 0;
-							p = b + 1;
-							if (p >= param + sizeof(param))
-								p = param + sizeof(param) - 1;
+						memmove(p, c, strlen(c) + 1);
+						c = strchr(p, '<');
+						if (c != NULL) {
+							*(c++) = 0;
+							p = c;
 						}
 					}
 				}
 			}
+			if (p == req_buffer)
+				*p = 0;
 			if (csocks[si] == -1)
 				break;
 		}
@@ -299,8 +298,8 @@ handle_request(int si)
 	}
 	else if (strcmp(cmd, "text.add_tx") == 0) {
 		send_xmlrpc_response(csocks[si], NULL, NULL);
-		if (param[0])
-			add_tx(param);
+		if (req_buffer[0])
+			add_tx(req_buffer);
 	}
 	else if (strcmp(cmd, "main.tx") == 0) {
 		send_xmlrpc_response(csocks[si], NULL, NULL);
@@ -313,7 +312,7 @@ handle_request(int si)
 		send_xmlrpc_response(csocks[si], "int", buf);
 	}
 	else if (strcmp(cmd, "text.get_rx") == 0) {
-		start = strtol(param, &c, 10);
+		start = strtol(req_buffer, &c, 10);
 		len = strtol(c + 1, NULL, 10);
 		/*
 		 * TODO: TLF uses start:end, not start:len as documented
@@ -365,13 +364,13 @@ handle_request(int si)
 		send_xmlrpc_response(csocks[si], "int", "0");
 	}
 	else if (strcmp(cmd, "modem.set_by_name") == 0) {
-		if (strcmp(param, "RTTY"))
+		if (strcmp(req_buffer, "RTTY"))
 			send_xmlrpc_fault(csocks[si]);
 		else
 			send_xmlrpc_response(csocks[si], "string", "RTTY");
 	}
 	else if (strcmp(cmd, "modem.set_by_id") == 0) {
-		if (strcmp(param, "0"))
+		if (strcmp(req_buffer, "0"))
 			send_xmlrpc_fault(csocks[si]);
 		else
 			send_xmlrpc_response(csocks[si], "string", "0");
@@ -382,7 +381,7 @@ handle_request(int si)
 	}
 	else if (strcmp(cmd, "modem.set_reverse") == 0) {
 		sprintf(buf, "%d", reverse);
-		if (atoi(param) != reverse)
+		if (atoi(req_buffer) != reverse)
 			toggle_reverse(&reverse);
 		send_xmlrpc_response(csocks[si], "boolean", buf);
 	}
@@ -392,7 +391,7 @@ handle_request(int si)
 		send_xmlrpc_response(csocks[si], "boolean", buf);
 	}
 	else if (strcmp(cmd, "modem.run_macro") == 0) {
-		ret = atoi(param);
+		ret = atoi(req_buffer);
 		if (ret >= 0 && ret < sizeof(settings.macros) / sizeof(*settings.macros)) {
 			send_xmlrpc_response(csocks[si], NULL, NULL);
 			do_macro(ret + 1);
@@ -409,7 +408,7 @@ handle_request(int si)
 		send_xmlrpc_response(csocks[si], "string", buf);
 	}
 	else if (strcmp(cmd, "log.set_call") == 0) {
-		captured_callsign(param);
+		captured_callsign(req_buffer);
 		send_xmlrpc_response(csocks[si], NULL, NULL);
 	}
 	else if (strcmp(cmd, "log.get_call") == 0) {
@@ -776,6 +775,7 @@ add_tx(const char *str)
 				break;
 			case '\n':
 				*(b++) = '\r';
+				break;
 			default:
 				*(b++) = *c;
 				break;
