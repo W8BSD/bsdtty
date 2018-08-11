@@ -35,5 +35,6 @@ void update_squelch(int level);
 void update_captured_call(const char *call);
 void update_serial(unsigned value);
 void toggle_tuning_aid();
+void debug_status(int y, int x, char *str);
 
 #endif

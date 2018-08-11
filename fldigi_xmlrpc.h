@@ -4,5 +4,6 @@
 void setup_xmlrpc(void);
 void handle_xmlrpc(void);
 void fldigi_add_rx(char ch);
+void close_sockets(void);
 
 #endif

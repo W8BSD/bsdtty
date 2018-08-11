@@ -281,6 +281,12 @@ int main(int argc, char **argv)
 	setlocale(LC_ALL, "");
 	atexit(done);
 
+	/*
+	 * We want to set up the sockets before we setup curses since
+	 * it can spin writing to stderr.
+	 */
+	setup_xmlrpc();
+
 	// Now set up curses
 	setup_curses();
 
@@ -295,7 +301,6 @@ int main(int argc, char **argv)
 	update_serial(serial);
 
 	setup_rig_control();
-	setup_xmlrpc();
 
 	// Finally, do the thing.
 	input_loop();
@@ -478,23 +483,22 @@ handle_rx_char(char ch)
 static void
 input_loop(void)
 {
-	bool rx_mode = true;
 	int rxstate = -1;
 	int i;
 	char ch;
 
 	while (1) {
 		handle_xmlrpc();
-		if (!rx_mode) {	// TX Mode
+		if (get_rig_ptt()) {	// TX Mode
 			if (!do_tx())
 				return;
-			rx_mode = true;
 			reset_rx();
 			rxstate = -1;
 		}
 		else {
 			if (check_input()) {
-				rx_mode = false;
+				if (!do_tx())
+					return;
 				continue;
 			}
 
@@ -527,113 +531,107 @@ do_tx(void)
 {
 	int ch;
 
-	for (;;) {
-		ch = get_input();
-		switch (ch) {
-			case -1:
-				if (settings.afsk)
-					send_rtty_char(0x1f);
-				else
-					printf_errno("getting character");
-				break;
-			case 3:
-				return false;
-			case RTTY_FKEY(1):
-				do_macro(1);
-				break;
-			case RTTY_FKEY(2):
-				do_macro(2);
-				break;
-			case RTTY_FKEY(3):
-				do_macro(3);
-				break;
-			case RTTY_FKEY(4):
-				do_macro(4);
-				break;
-			case RTTY_FKEY(5):
-				do_macro(5);
-				break;
-			case RTTY_FKEY(6):
-				do_macro(6);
-				break;
-			case RTTY_FKEY(7):
-				do_macro(7);
-				break;
-			case RTTY_FKEY(8):
-				do_macro(8);
-				break;
-			case RTTY_FKEY(9):
-				do_macro(9);
-				break;
-			case RTTY_FKEY(10):
-				do_macro(10);
-				break;
-			case RTTY_KEY_LEFT:
-				sync_squelch--;
-				if (sync_squelch < 1)
-					sync_squelch = 1;
-				update_squelch(sync_squelch);
-				break;
-			case RTTY_KEY_RIGHT:
-				sync_squelch++;
-				if (sync_squelch > 9)
-					sync_squelch = 9;
-				update_squelch(sync_squelch);
-				break;
-			case RTTY_KEY_UP:
-				serial++;
-				update_serial(serial);
-				break;
-			case RTTY_KEY_DOWN:
-				if (serial)
-					serial--;
-				update_serial(serial);
-				break;
-			case RTTY_KEY_REFRESH:
-				display_charset(charsets[settings.charset].name);
-				update_squelch(sync_squelch);
-				show_reverse(reverse);
-				update_captured_call(their_callsign);
-				update_serial(serial);
-				break;
-			case '`':
-				toggle_reverse(&reverse);
-				break;
-			case '[':
-				settings.charset--;
-				if (settings.charset < 0)
-					settings.charset = sizeof(charsets) / sizeof(charsets[0]) - 1;
-				display_charset(charsets[settings.charset].name);
-				break;
-			case ']':
-				// TODO: CR is expanded to CRLF...
+	ch = get_input();
+	switch (ch) {
+		case -1:
+			if (settings.afsk)
+				send_rtty_char(0x1f);
+			break;
+		case 3:
+			return false;
+		case RTTY_FKEY(1):
+			do_macro(1);
+			break;
+		case RTTY_FKEY(2):
+			do_macro(2);
+			break;
+		case RTTY_FKEY(3):
+			do_macro(3);
+			break;
+		case RTTY_FKEY(4):
+			do_macro(4);
+			break;
+		case RTTY_FKEY(5):
+			do_macro(5);
+			break;
+		case RTTY_FKEY(6):
+			do_macro(6);
+			break;
+		case RTTY_FKEY(7):
+			do_macro(7);
+			break;
+		case RTTY_FKEY(8):
+			do_macro(8);
+			break;
+		case RTTY_FKEY(9):
+			do_macro(9);
+			break;
+		case RTTY_FKEY(10):
+			do_macro(10);
+			break;
+		case RTTY_KEY_LEFT:
+			sync_squelch--;
+			if (sync_squelch < 1)
+				sync_squelch = 1;
+			update_squelch(sync_squelch);
+			break;
+		case RTTY_KEY_RIGHT:
+			sync_squelch++;
+			if (sync_squelch > 9)
+				sync_squelch = 9;
+			update_squelch(sync_squelch);
+			break;
+		case RTTY_KEY_UP:
+			serial++;
+			update_serial(serial);
+			break;
+		case RTTY_KEY_DOWN:
+			if (serial)
+				serial--;
+			update_serial(serial);
+			break;
+		case RTTY_KEY_REFRESH:
+			display_charset(charsets[settings.charset].name);
+			update_squelch(sync_squelch);
+			show_reverse(reverse);
+			update_captured_call(their_callsign);
+			update_serial(serial);
+			break;
+		case '`':
+			toggle_reverse(&reverse);
+			break;
+		case '[':
+			settings.charset--;
+			if (settings.charset < 0)
+				settings.charset = sizeof(charsets) / sizeof(charsets[0]) - 1;
+			display_charset(charsets[settings.charset].name);
+			break;
+		case ']':
+			// TODO: CR is expanded to CRLF...
 #if 0
-				settings.charset++;
-				if (settings.charset == sizeof(charsets) / sizeof(charsets[0]))
-					settings.charset = 0;
-				display_charset(charsets[settings.charset].name);
+			settings.charset++;
+			if (settings.charset == sizeof(charsets) / sizeof(charsets[0]))
+				settings.charset = 0;
+			display_charset(charsets[settings.charset].name);
 #endif
-				break;
-			case '\\':
-				reset_tuning_aid();
-				break;
-			case 23:
-				if (!get_rts())
-					toggle_tuning_aid();
-				break;
-			case 0x7f:
-			case 0x08:
-				if (!get_rts())
-					change_settings();
-				break;
-			default:
-				send_char(ch);
-				break;
-		}
-		if (!get_rts()) {
-			return true;
-		}
+			break;
+		case '\\':
+			reset_tuning_aid();
+			break;
+		case 23:
+			if (!get_rts())
+				toggle_tuning_aid();
+			break;
+		case 0x7f:
+		case 0x08:
+			if (!get_rts())
+				change_settings();
+			break;
+		default:
+			send_char(ch);
+			break;
 	}
+	return true;
 }
 
 void
@@ -707,6 +705,7 @@ send_char(const char ch)
 
 	bch = asc2baudot(ch, txfigs);
 	rts = get_rts();
+
 	if (ch == '\t' || (!rts && bch != 0)) {
 		rts = !rts;
 		state = TIOCM_RTS;
@@ -837,6 +836,8 @@ done(void)
 		state &= ~(TIOCM_RTS | TIOCM_DTR);
 		ioctl(tty, TIOCMSET, &state);
 	}
+
+	close_sockets();
 }
 
 int

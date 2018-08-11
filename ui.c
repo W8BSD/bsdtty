@@ -228,6 +228,7 @@ get_input(void)
 {
 	int ret;
 	MEVENT ev;
+
 	ret = wgetch(tx);
 	switch(ret) {
 		case ERR:
@@ -466,10 +467,7 @@ setup_windows(void)
 	wrefresh(rx);
 	wrefresh(tx_title);
 	wrefresh(tx);
-	if (settings.afsk)
-		wtimeout(tx, 0);
-	else
-		wtimeout(tx, -1);
+	wtimeout(tx, 0);
 	wtimeout(rx, 0);
 	keypad(rx, TRUE);
 	keypad(tx, TRUE);
@@ -1371,4 +1369,11 @@ toggle_tuning_aid()
 		wclear(tx);
 		waterfall = true;
 	}
+}
+
+void
+debug_status(int y, int x, char *str)
+{
+	mvwaddstr(status, y, x, str);
+	wrefresh(status);
 }

@@ -90,6 +90,9 @@ setup_xmlrpc(void)
 	char port[6];
 	int sock;
 	int *tmp;
+	int ret;
+	char hostname[256];
+	int opt;
 
 	if (settings.xmlrpc_host == NULL || settings.xmlrpc_host[0] == 0)
 		return;
@@ -102,27 +105,42 @@ setup_xmlrpc(void)
 		sock = socket(aip->ai_family, aip->ai_socktype, aip->ai_protocol);
 		if (sock == -1)
 			continue;
-		if (bind(sock, aip->ai_addr, aip->ai_addrlen) == 0) {
-			if (listen(sock, 8) == 0) {
-				nlsocks++;
-				tmp = realloc(lsocks, sizeof(*lsocks) * nlsocks);
-				if (tmp == NULL) {
+		opt = 1;
+		setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+		for (;;) {
+			if ((ret = bind(sock, aip->ai_addr, aip->ai_addrlen)) == 0) {
+				if ((ret = listen(sock, 8)) == 0) {
+					nlsocks++;
+					tmp = realloc(lsocks, sizeof(*lsocks) * nlsocks);
+					if (tmp == NULL) {
+						close(sock);
+						sock = -1;
+					}
+					else {
+						lsocks = tmp;
+						lsocks[nlsocks - 1] = sock;
+					}
+				}
+				else {
 					close(sock);
 					sock = -1;
 				}
-				else {
-					lsocks = tmp;
-					lsocks[nlsocks - 1] = sock;
-				}
+				break;
 			}
 			else {
+				if (errno == EADDRINUSE) {
+					if (getnameinfo(aip->ai_addr, aip->ai_addrlen, hostname, sizeof(hostname), NULL, 0, 0) == 0) {
+						fprintf(stderr, "Address %s:%" PRIu16 " is in use... will retry unless you hit CTRL-C\n", hostname, settings.xmlrpc_port);
+						sleep(1);
+						continue;
+					}
+					else
+						break;
+					continue;
+				}
 				close(sock);
 				sock = -1;
 			}
-		}
-		else {
-			close(sock);
-			sock = -1;
 		}
 	}
 	freeaddrinfo(ai);
@@ -913,4 +931,16 @@ send_xmlrpc_fault(int sock)
 	char *buf = "HTTP/1.1 501 Crappy Server\r\nConnection: Keep-Alive\r\nContent-Type: text/xml\r\nContent-Length: 293\r\n\r\n<?xml version=\"1.0\"?>\n<methodResponse><fault><value><struct><member><name>faultCode</name><value><int>73</int></value></member><member><name>faultString</name><value><string>This server is too crap to even know what you want.</string></value></member></struct></value></fault></methodResponse>";
 
 	send(sock, buf, strlen(buf), 0);
+}
+
+void
+close_sockets(void)
+{
+	/* First, close listening sockets */
+	while (nlsocks)
+		remove_sock(lsocks, &nlsocks, 0);
+
+	/* Now close connected sockets */
+	while (ncsocks)
+		remove_sock(csocks, &ncsocks, 0);
 }
