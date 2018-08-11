@@ -530,194 +530,237 @@ struct field_info {
 		STYPE_UINT16
 	} type;
 	void *ptr;
+	int flen;
+	bool eol;
 } fields[] = {
 	{
 		.name = "Log file name",
 		.key = "logfile",
 		.type = STYPE_STRING,
-		.ptr = ((char *)(&settings)) + offsetof(struct bt_settings, log_name)
+		.ptr = ((char *)(&settings)) + offsetof(struct bt_settings, log_name),
+		.flen = 40
 	},
 	{
 		.name = "TTY device name",
 		.key = "ttydevice",
 		.type = STYPE_STRING,
-		.ptr = ((char *)(&settings)) + offsetof(struct bt_settings, tty_name)
+		.ptr = ((char *)(&settings)) + offsetof(struct bt_settings, tty_name),
+		.flen = 20
 	},
 	{
 		.name = "DSP device name",
 		.key = "dspdevice",
 		.type = STYPE_STRING,
-		.ptr = ((char *)(&settings)) + offsetof(struct bt_settings, dsp_name)
+		.ptr = ((char *)(&settings)) + offsetof(struct bt_settings, dsp_name),
+		.flen = 20
 	},
 	{
 		.name = "Bandpass filter Q",
 		.key = "bandpassq",
 		.type = STYPE_DOUBLE,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, bp_filter_q)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, bp_filter_q),
+		.flen = 10
 	},
 	{
 		.name = "Lowpass filter Q",
 		.key = "lowpassq",
 		.type = STYPE_DOUBLE,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, lp_filter_q)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, lp_filter_q),
+		.flen = 10
 	},
 	{
 		.name = "Mark frequency",
 		.key = "markfreq",
 		.type = STYPE_DOUBLE,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, mark_freq)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, mark_freq),
+		.flen = 5
 	},
 	{
 		.name = "Space frequency",
 		.key = "spacefreq",
 		.type = STYPE_DOUBLE,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, space_freq)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, space_freq),
+		.flen = 5,
+		.eol = true
 	},
 	{
 		.name = "DSP sample rate",
 		.key = "dsprate",
 		.type = STYPE_INT,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, dsp_rate)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, dsp_rate),
+		.flen = 6,
+		.eol = true
 	},
 	{
 		.name = "Baud numerator",
 		.key = "baudnumerator",
 		.type = STYPE_INT,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, baud_numerator)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, baud_numerator),
+		.flen = 5
 	},
 	{
 		.name = "Baud denominator",
 		.key = "bauddenominator",
 		.type = STYPE_INT,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, baud_denominator)
-	},
-	{
-		.name = "F1 macro",
-		.key = "f1",
-		.type = STYPE_MACRO,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 0
-	},
-	{
-		.name = "F2 macro",
-		.key = "f2",
-		.type = STYPE_MACRO,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 1
-	},
-	{
-		.name = "F3 macro",
-		.key = "f3",
-		.type = STYPE_MACRO,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 2
-	},
-	{
-		.name = "F4 macro",
-		.key = "f4",
-		.type = STYPE_MACRO,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 3
-	},
-	{
-		.name = "F5 macro",
-		.key = "f5",
-		.type = STYPE_MACRO,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 4
-	},
-	{
-		.name = "F6 macro",
-		.key = "f6",
-		.type = STYPE_MACRO,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 5
-	},
-	{
-		.name = "F7 macro",
-		.key = "f7",
-		.type = STYPE_MACRO,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 6
-	},
-	{
-		.name = "F8 macro",
-		.key = "f8",
-		.type = STYPE_MACRO,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 7
-	},
-	{
-		.name = "F9 macro",
-		.key = "f9",
-		.type = STYPE_MACRO,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 8
-	},
-	{
-		.name = "F10 macro",
-		.key = "f10",
-		.type = STYPE_MACRO,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 9
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, baud_denominator),
+		.flen = 5,
+		.eol = true
 	},
 	{
 		.name = "Character set",
 		.key = "charset",
 		.type = STYPE_INT,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, charset)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, charset),
+		.flen = 2
 	},
 	{
 		.name = "AFSK mode",
 		.key = "afsk",
 		.type = STYPE_BOOL,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, afsk)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, afsk),
+		.flen = 2,
+		.eol = true
 	},
 	{
 		.name = "Callsign",
 		.key = "callsign",
 		.type = STYPE_BAUDOT,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, callsign)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, callsign),
+		.flen = 8,
+		.eol = true
 	},
 	{
 		.name = "Rig control PTT",
 		.key = "rigctlptt",
 		.type = STYPE_BOOL,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, ctl_ptt)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, ctl_ptt),
+		.flen = 2,
+		.eol = true
 	},
 #ifdef WITH_OUTRIGGER
 	{
 		.name = "Outrigger rig",
 		.key = "outriggerrig",
 		.type = STYPE_STRING,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, or_rig)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, or_rig),
+		.flen = 10
 	},
 	{
 		.name = "Outrigger device",
 		.key = "outriggerdev",
 		.type = STYPE_STRING,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, or_dev)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, or_dev),
+		.flen = 20,
+		.eol = true
 	},
 #endif
 	{
 		.name = "Mark VFO offset",
 		.key = "freqoffset",
 		.type = STYPE_INT,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, freq_offset)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, freq_offset),
+		.flen = 5,
+		.eol = true
 	},
 	{
 		.name = "Rigctld hostname",
 		.key = "rigctldhost",
 		.type = STYPE_STRING,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, rigctld_host)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, rigctld_host),
+		.flen = 20
 	},
 	{
 		.name = "Rigctld port",
 		.key = "rigctldport",
 		.type = STYPE_UINT16,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, rigctld_port)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, rigctld_port),
+		.flen = 6,
+		.eol = true
 	},
 	{
 		.name = "XML-RPC host",
 		.key = "xmlrpchost",
 		.type = STYPE_STRING,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, xmlrpc_host)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, xmlrpc_host),
+		.flen = 20
 	},
 	{
 		.name = "XML-RPC port",
 		.key = "xmlrpcport",
 		.type = STYPE_UINT16,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, xmlrpc_port)
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, xmlrpc_port),
+		.flen = 6,
+		.eol = true
+	},
+	{
+		.name = "F1 macro",
+		.key = "f1",
+		.type = STYPE_MACRO,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 0,
+		.flen = 50
+	},
+	{
+		.name = "F2 macro",
+		.key = "f2",
+		.type = STYPE_MACRO,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 1,
+		.flen = 50
+	},
+	{
+		.name = "F3 macro",
+		.key = "f3",
+		.type = STYPE_MACRO,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 2,
+		.flen = 50
+	},
+	{
+		.name = "F4 macro",
+		.key = "f4",
+		.type = STYPE_MACRO,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 3,
+		.flen = 50
+	},
+	{
+		.name = "F5 macro",
+		.key = "f5",
+		.type = STYPE_MACRO,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 4,
+		.flen = 50
+	},
+	{
+		.name = "F6 macro",
+		.key = "f6",
+		.type = STYPE_MACRO,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 5,
+		.flen = 50
+	},
+	{
+		.name = "F7 macro",
+		.key = "f7",
+		.type = STYPE_MACRO,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 6,
+		.flen = 50
+	},
+	{
+		.name = "F8 macro",
+		.key = "f8",
+		.type = STYPE_MACRO,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 7,
+		.flen = 50
+	},
+	{
+		.name = "F9 macro",
+		.key = "f9",
+		.type = STYPE_MACRO,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 8,
+		.flen = 50
+	},
+	{
+		.name = "F10 macro",
+		.key = "f10",
+		.type = STYPE_MACRO,
+		.ptr = (char *)(&settings) + offsetof(struct bt_settings, macros) + sizeof(settings.macros[0]) * 9,
+		.flen = 50
 	},
 };
 #define NUM_FIELDS (sizeof(fields) / sizeof(fields[0]))
@@ -736,14 +779,28 @@ change_settings(void)
 	FILE *config;
 	char *fname;
 	char *bd;
+	int ffy, ffx;
+	int keywidth = 18;
 
 	baudot = new_fieldtype(NULL, baudot_char);
 	baudot_macro = new_fieldtype(NULL, baudot_macro_char);
 	curs_set(1);
 	clear();
 	refresh();
+	ffx = keywidth + 1;
+	ffy = 0;
 	for (i = 0; i < NUM_FIELDS; i++) {
-		field[i] = new_field(1, (fields[i].type == STYPE_STRING || fields[i].type == STYPE_BAUDOT || fields[i].type == STYPE_MACRO) ? tx_width - 26 : 20, 1+i, 20, 0, 0);
+		if (ffx + fields[i].flen >= tx_width) {
+			ffx = keywidth + 1;
+			ffy++;
+		}
+		field[i] = new_field(1, fields[i].flen, ffy, ffx, 0, 0);
+		ffx += fields[i].flen + 2;
+		ffx += keywidth;
+		if (ffx >= tx_width || fields[i].eol) {
+			ffx = keywidth + 1;
+			ffy++;
+		}
 		set_field_back(field[i], A_UNDERLINE);
 		field_opts_off(field[i], O_AUTOSKIP);
 		switch (fields[i].type) {
@@ -816,8 +873,21 @@ change_settings(void)
 
 	frm = new_form(field);
 	post_form(frm);
+	ffx = 1;
+	ffy = 0;
 	for (i = 0; i < NUM_FIELDS; i++) {
-		mvprintw(i+1, 1, fields[i].name);
+		if (ffx + keywidth + fields[i].flen >= tx_width) {
+			ffx = 1;
+			ffy++;
+		}
+		mvprintw(ffy, ffx, "%s%.*s", fields[i].name, keywidth - strlen(fields[i].name), "......................................................");
+		ffx += keywidth;
+		ffx += fields[i].flen;
+		ffx += 2;
+		if (ffx + keywidth >= tx_width || fields[i].eol) {
+			ffx = 1;
+			ffy++;
+		}
 	}
 
 	form_driver(frm, REQ_END_LINE);
