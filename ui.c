@@ -326,7 +326,6 @@ write_rx(char ch)
 static void
 show_freq(void)
 {
-#ifdef WITH_OUTRIGGER
 	uint64_t freq;
 	char fstr[32];
 
@@ -338,13 +337,14 @@ show_freq(void)
 		}
 	}
 	get_rig_mode(fstr, sizeof(fstr));
-	if (strcmp(fstr, last_mode))
-		mvwaddstr(status, 0, 30, fstr);
+	if (strcmp(fstr, last_mode)) {
+		wmove(status, 0, 30);
+		w_printf(status, "%-5s", fstr);
+	}
 	if (strcmp(fstr, last_mode) || last_freq != freq)
 		wrefresh(status);
 	strcpy(last_mode, fstr);
 	last_freq = freq;
-#endif
 }
 
 bool
