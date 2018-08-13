@@ -30,7 +30,7 @@ Controls:
 | \           | Rescales the tuning aid display                        |
 | CTRL-C      | Exit                                                   |
 | CTRL-L      | Clear RX window                                        |
-| CTRL-W      | Toggle between crossed bananas and ASCIIfall           |
+| CTRL-W      | Cycle through crossed bananas, ASCIIfall, and TX       |
 | Left-arrow  | Lower squelch level by one                             |
 | Right-arrow | Raise squelch level by one                             |
 | Left-click  | Select callsing from RX window                         |

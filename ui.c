@@ -49,6 +49,7 @@
 static WINDOW *status;
 static WINDOW *status_title;
 static WINDOW *rx;
+static WINDOW *tuning_aid;
 static WINDOW *rx_title;
 static WINDOW *tx;
 static WINDOW *tx_title;
@@ -57,7 +58,8 @@ static int tx_height;
 static bool reset_tuning;
 static uint64_t last_freq;
 static char last_mode[16] = "";
-bool waterfall;
+
+enum tuning_styles tuning_style = TUNE_ASCIINANAS;
 
 static bool baudot_char(int ch, const void *ab);
 static bool baudot_macro_char(int ch, const void *ab);
@@ -73,6 +75,7 @@ static void toggle_figs(int y, int x);
 static void w_printf(WINDOW *win, const char *format, ...);
 static char *unescape_config(char *str, bool macro);
 static void update_waterfall(void);
+static void draw_tx_title(enum tuning_styles style);
 
 enum bsdtty_colors {
 	TTY_COLOR_NORMAL,
@@ -148,7 +151,10 @@ update_tuning_aid(double mark, double space)
 	chtype ch;
 	int och;
 
-	if (waterfall) {
+	if (tuning_style == TUNE_NONE)
+		return;
+
+	if (tuning_style == TUNE_ASCIIFALL) {
 		update_waterfall();
 		return;
 	}
@@ -191,13 +197,13 @@ update_tuning_aid(double mark, double space)
 		smult = maxs / (tx_height / 2 - 2);
 		madd = tx_width / 2;
 		sadd = tx_height / 2;
-		werase(tx);
+		werase(tuning_aid);
 		if (mmult == 0 || smult == 0)
 			return;
 		for (wsamp = 0; wsamp < nsamp; wsamp++) {
 			y = buf[wsamp*2+1] / smult + sadd;
 			x = buf[wsamp*2] / mmult + madd;
-			ch = mvwinch(tx, y, x);
+			ch = mvwinch(tuning_aid, y, x);
 			switch (ch & A_CHARTEXT) {
 				case ' ':
 					och = '.';
@@ -223,10 +229,10 @@ update_tuning_aid(double mark, double space)
 				default:
 					printf_errno("no char %02x (%d) at %d %d", ch, ch, y, x);
 			}
-			mvwaddch(tx, buf[wsamp*2+1] / smult + sadd, buf[wsamp*2] / mmult + madd, och);
+			mvwaddch(tuning_aid, buf[wsamp*2+1] / smult + sadd, buf[wsamp*2] / mmult + madd, och);
 		}
-		wmove(tx, 0, 0);
-		wrefresh(tx);
+		wmove(tuning_aid, 0, 0);
+		wrefresh(tuning_aid);
 		wsamp = 0;
 	}
 }
@@ -234,7 +240,16 @@ update_tuning_aid(double mark, double space)
 void
 mark_tx_extent(bool start)
 {
+	if (start) {
+		redrawwin(tx);
+		wrefresh(tx);
+		draw_tx_title(TUNE_NONE);
+	}
 	w_printf(tx, "\n------- %s of transmission -------\n", start ? "Start" : "End");
+	if (!start && tuning_style != TUNE_NONE) {
+		redrawwin(tuning_aid);
+		draw_tx_title(tuning_style);
+	}
 }
 
 int
@@ -493,6 +508,32 @@ printf_errno(const char *format, ...)
 }
 
 static void
+draw_tx_title(enum tuning_styles style)
+{
+	int i, y, x;
+
+	wmove(tx_title, 0, 0);
+	for (i = 0; i < 3; i++)
+		waddch(tx_title, ACS_HLINE);
+	switch (style) {
+		case TUNE_ASCIIFALL:
+			waddstr(tx_title, " ASCIIfall ");
+			break;
+		case TUNE_ASCIINANAS:
+			waddstr(tx_title, " Crossed ASCIInanas ");
+			break;
+		case TUNE_NONE:
+			waddstr(tx_title, " TX ");
+			break;
+	}
+
+	getyx(tx_title, y, x);
+	for (i = x; i < tx_width; i++)
+		waddch(tx_title, ACS_HLINE);
+	wrefresh(tx_title);
+}
+
+static void
 setup_windows(void)
 {
 	struct winsize ws;
@@ -519,6 +560,8 @@ setup_windows(void)
 		printf_errno("creating tx_title window");
 	if ((tx = newwin(datrows, ws.ws_col, ws.ws_row - datrows, 0)) == NULL)
 		printf_errno("creating tx window");
+	if ((tuning_aid = newwin(datrows, ws.ws_col, ws.ws_row - datrows, 0)) == NULL)
+		printf_errno("creating tx window");
 	tx_width = ws.ws_col;
 	tx_height = datrows;
 	scrollok(status_title, FALSE);
@@ -529,13 +572,17 @@ setup_windows(void)
 	scrollok(rx, TRUE);
 	scrollok(tx_title, FALSE);
 	idlok(tx, TRUE);
+	idlok(tuning_aid, TRUE);
 	wsetscrreg(tx, 0, datrows - 1);
+	wsetscrreg(tuning_aid, 0, datrows - 1);
 	scrollok(tx, TRUE);
+	scrollok(tuning_aid, TRUE);
 	wclear(status_title);
 	wclear(status);
 	wclear(rx_title);
 	wclear(rx);
 	wclear(tx_title);
+	wclear(tuning_aid);
 	wclear(tx);
 	wmove(status_title, 0, 0);
 	wmove(status, 0, 0);
@@ -543,10 +590,10 @@ setup_windows(void)
 	wmove(rx, 0, 0);
 	wmove(tx_title, 0, 0);
 	wmove(tx, 0, 0);
+	wmove(tuning_aid, 0, 0);
 	for (i = 0; i < 3; i++) {
 		waddch(status_title, ACS_HLINE);
 		waddch(rx_title, ACS_HLINE);
-		waddch(tx_title, ACS_HLINE);
 	}
 	waddstr(status_title, " Status ");
 	getyx(status_title, y, x);
@@ -556,26 +603,25 @@ setup_windows(void)
 	getyx(rx_title, y, x);
 	for (i = x; i < ws.ws_col; i++)
 		waddch(rx_title, ACS_HLINE);
-	waddstr(tx_title, " TX ");
-	getyx(tx_title, y, x);
-	for (i = x; i < ws.ws_col; i++)
-		waddch(tx_title, ACS_HLINE);
 	wrefresh(status_title);
 	wrefresh(status);
 	wrefresh(rx_title);
 	wrefresh(rx);
-	wrefresh(tx_title);
 	wrefresh(tx);
+	draw_tx_title(tuning_style);
 	wtimeout(tx, 0);
+	wtimeout(tuning_aid, 0);
 	wtimeout(rx, 0);
 	keypad(rx, TRUE);
 	keypad(tx, TRUE);
+	keypad(tuning_aid, TRUE);
 	show_reverse(reverse);
 }
 
 static void
 teardown_windows(void)
 {
+	delwin(tuning_aid);
 	delwin(tx);
 	delwin(tx_title);
 	delwin(rx);
@@ -1077,13 +1123,17 @@ done:
 	touchwin(rx);
 	touchwin(tx_title);
 	touchwin(tx);
+	touchwin(tuning_aid);
 	curs_set(0);
 	wrefresh(status_title);
 	wrefresh(status);
 	wrefresh(rx_title);
 	wrefresh(rx);
 	wrefresh(tx_title);
-	wrefresh(tx);
+	if (tuning_style == TUNE_NONE)
+		wrefresh(tx);
+	else
+		wrefresh(tuning_aid);
 }
 
 static bool
@@ -1509,7 +1559,7 @@ update_waterfall(void)
 	}
 	if (diff.tv_sec <= 0 && diff.tv_nsec < 100000000)
 		return;
-	scroll(tx);
+	scroll(tuning_aid);
 	last = now;
 	for (i = 0; i < tx_width; i++) {
 		v = get_waterfall(i);
@@ -1519,24 +1569,32 @@ update_waterfall(void)
 			max = v;
 	}
 	for (i = 0; i < tx_width; i++)
-		mvwaddch(tx, tx_height - 2, i, chars[(int)((get_waterfall(i) - min) / ((max - min) / (sizeof(chars) - 1)))]);
-	mvwaddch(tx, tx_height - 1, settings.mark_freq / d, ACS_VLINE);
-	mvwaddch(tx, tx_height - 1, settings.space_freq / d, ACS_VLINE);
-	wrefresh(tx);
+		mvwaddch(tuning_aid, tx_height - 2, i, chars[(int)((get_waterfall(i) - min) / ((max - min) / (sizeof(chars) - 1)))]);
+	mvwaddch(tuning_aid, tx_height - 1, settings.mark_freq / d, ACS_VLINE);
+	mvwaddch(tuning_aid, tx_height - 1, settings.space_freq / d, ACS_VLINE);
+	wrefresh(tuning_aid);
 }
 
 void
 toggle_tuning_aid()
 {
-	if (waterfall) {
-		setup_spectrum_filters(0);
-		wclear(tx);
-		waterfall = false;
-	}
-	else {
-		setup_spectrum_filters(tx_width);
-		wclear(tx);
-		waterfall = true;
+	tuning_style++;
+	if (tuning_style > TUNE_LAST)
+		tuning_style = TUNE_NONE;
+
+	draw_tx_title(tuning_style);
+
+	switch (tuning_style) {
+		case TUNE_NONE:
+			redrawwin(tx);
+			wrefresh(tx);
+			/* fall-through */
+		case TUNE_ASCIINANAS:
+			setup_spectrum_filters(0);
+			break;
+		case TUNE_ASCIIFALL:
+			setup_spectrum_filters(tx_width);
+			break;
 	}
 }
 

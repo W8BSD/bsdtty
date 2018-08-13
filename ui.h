@@ -14,7 +14,14 @@
 #define RTTY_KEY_UP		0x0104
 #define RTTY_KEY_DOWN		0x0105
 
-extern bool waterfall;
+enum tuning_styles {
+	TUNE_NONE,
+	TUNE_ASCIINANAS,
+	TUNE_ASCIIFALL
+};
+#define TUNE_LAST TUNE_ASCIIFALL
+
+extern enum tuning_styles tuning_style;
 
 void setup_curses(void);
 void update_tuning_aid(double mark, double space);

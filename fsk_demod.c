@@ -1038,7 +1038,7 @@ feed_waterfall(int16_t value)
 	int i;
 	double v;
 
-	if (!waterfall)
+	if (tuning_style != TUNE_ASCIIFALL)
 		return;
 	for (i = 0; i < waterfall_width; i++) {
 		v = bq_filter(value, waterfall_bp[i]);
