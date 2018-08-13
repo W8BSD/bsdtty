@@ -348,7 +348,10 @@ show_freq(void)
 	bool subband = false;
 	bool contest = false;
 
-	freq = get_rig_freq() + settings.freq_offset;
+	freq = get_rig_freq();
+	if (freq == 0)
+		return;
+	freq += settings.freq_offset;
 	switch (toupper(settings.callsign[0])) {
 		case 'A':
 			if (toupper(settings.callsign[0]) > 'L')
