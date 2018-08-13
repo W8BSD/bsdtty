@@ -74,15 +74,29 @@ static void w_printf(WINDOW *win, const char *format, ...);
 static char *unescape_config(char *str, bool macro);
 static void update_waterfall(void);
 
+enum bsdtty_colors {
+	TTY_COLOR_NORMAL,
+	TTY_COLOR_GREEN_VU,
+	TTY_COLOR_YELLOW_VU,
+	TTY_COLOR_RED_VU,
+	TTY_COLOR_OUT_OF_BAND,
+	TTY_COLOR_IN_SUBBAND,
+	TTY_COLOR_LEGAL
+};
+#define TTY_COLOR_IN_CONTEST TTY_COLOR_NORMAL
+
 void
 setup_curses(void)
 {
 	initscr();
 	atexit(do_endwin);
 	start_color();
-	init_pair(1, COLOR_GREEN, COLOR_GREEN);
-	init_pair(2, COLOR_YELLOW, COLOR_YELLOW);
-	init_pair(3, COLOR_RED, COLOR_RED);
+	init_pair(TTY_COLOR_GREEN_VU, COLOR_GREEN, COLOR_GREEN);
+	init_pair(TTY_COLOR_YELLOW_VU, COLOR_YELLOW, COLOR_YELLOW);
+	init_pair(TTY_COLOR_RED_VU, COLOR_RED, COLOR_RED);
+	init_pair(TTY_COLOR_OUT_OF_BAND, COLOR_BLACK, COLOR_RED);
+	init_pair(TTY_COLOR_IN_SUBBAND, COLOR_BLACK, COLOR_GREEN);
+	init_pair(TTY_COLOR_LEGAL, COLOR_WHITE, COLOR_YELLOW);
 	raw();		// cbreak() leaves SIGINT working
 	noecho();
 	nonl();
@@ -329,14 +343,96 @@ show_freq(void)
 {
 	uint64_t freq;
 	char fstr[32];
+	bool american = false;
+	bool legal = false;
+	bool subband = false;
+	bool contest = false;
 
 	freq = get_rig_freq() + settings.freq_offset;
+	switch (toupper(settings.callsign[0])) {
+		case 'A':
+			if (toupper(settings.callsign[0]) > 'L')
+				break;
+		case 'K':
+		case 'N':
+		case 'W':
+			american = true;
+			break;
+	}
+	if (american) {
+		switch (freq) {
+			case 135870 ... 137800:
+			case 472170 ... 479000:
+			case 1800170 ... 2000000:
+			case 3500170 ... 3600000:
+			case 5332080 ... 5332090:
+			case 5348080 ... 5348090:
+			case 5358580 ... 5358590:
+			case 5373080 ... 5373090:
+			case 5405080 ... 5405090:
+			case 7000170 ... 7125000:
+			case 10100170 ... 10150000:
+			case 14000170 ... 14150000:
+			case 18068170 ... 18110000:
+			case 21000170 ... 21200000:
+			case 24890170 ... 24930000:
+			case 28000170 ... 28300000:
+			case 50100170 ... 51000000:
+				legal = true;
+				break;
+		}
+	}
+	else
+		legal = true;
+	// I don't feel like doing VHF+ really...
+	if (freq >= 144100170) {
+		legal = true;
+		subband = true;
+		contest = true;
+	}
+	switch (freq) {
+		case 1800170 ... 1810000:
+		case 3580170 ... 3600000:
+		case 7030170 ... 7050000:
+		case 7080170 ... 7100000:
+		case 10130170 ... 10150000:
+		case 14080670 ... 14099499:
+		case 18100000 ... 18109499:
+		case 21080670 ... 21100000:
+		case 24910170 ... 24929499:
+		case 28080670 ... 28100000:
+			subband = true;
+			break;
+	}
+	switch (freq) {
+		case 14080670 ... 14150000:
+			if (freq >= 14099500 && freq <= 14100670)	// NCDXF/IARU Beacon
+				break;
+		case 21080670 ... 21150000:
+			if (freq >= 21070000 && freq <= 21076170)	// PSK31 to FT-8
+				break;
+		case 28080670 ... 28200000:
+			if (freq >= 28199500 && freq <= 28200670)	// NCDXF/IARU Beacon
+				break;
+		case 3570170 ... 3600000:
+		case 7025170 ... 7100000:
+			contest = true;
+	}
+	if (subband)
+		wcolor_set(status, TTY_COLOR_IN_SUBBAND, NULL);
+	else if (contest)
+		wcolor_set(status, TTY_COLOR_IN_CONTEST, NULL);
+	else if (legal)
+		wcolor_set(status, TTY_COLOR_LEGAL, NULL);
+	else
+		wcolor_set(status, TTY_COLOR_OUT_OF_BAND, NULL);
 	if (freq) {
 		if (last_freq != freq) {
 			sprintf(fstr, "%14s", format_freq(freq));
 			mvwaddstr(status, 0, 15, fstr);
 		}
 	}
+	wcolor_set(status, TTY_COLOR_NORMAL, NULL);
 	get_rig_mode(fstr, sizeof(fstr));
 	if (strcmp(fstr, last_mode)) {
 		wmove(status, 0, 30);
@@ -1177,16 +1273,16 @@ audio_meter(int16_t envelope)
 		blocks = (sz * 3);
 	wmove(status, 0, 66);
 	wclrtoeol(status);
-	wcolor_set(status, 1, NULL);
+	wcolor_set(status, TTY_COLOR_GREEN_VU, NULL);
 	wattron(status, A_BOLD);
 	for (i = 0; i < blocks; i++) {
 		if (i == (int)(sz * 0.75))
-			wcolor_set(status, 2, NULL);
+			wcolor_set(status, TTY_COLOR_YELLOW_VU, NULL);
 		else if (i == (int)(sz * 0.875))
-			wcolor_set(status, 3, NULL);
+			wcolor_set(status, TTY_COLOR_RED_VU, NULL);
 		waddch(status, ACS_BLOCK);
 	}
-	wcolor_set(status, 0, NULL);
+	wcolor_set(status, TTY_COLOR_NORMAL, NULL);
 	wattroff(status, A_BOLD);
 	wrefresh(status);
 }

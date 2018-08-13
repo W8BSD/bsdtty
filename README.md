@@ -57,6 +57,14 @@ Special characters can be used in macros:
 
 The trailing space is only valid at the end of the macro.
 
+The background of the frequency changes colour based on common usage:
+
+* RED means out of band (only used if Callsign setting is a US callsign)
+* YELLOW (or Brown) means legal, but not used even by contests
+* GREEN normal RTTY subband
+* Default background color, used in contests, but not usually for casual QSOs.
+
+
 Outstanding issues:
 * I should idle with LTRS, not a mark signal... super tricky.
 * Really needs a manpage.
