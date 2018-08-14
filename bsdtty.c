@@ -34,6 +34,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <locale.h>
 #include <netdb.h>
@@ -60,7 +61,9 @@ static void done(void);
 static bool get_rts(void);
 static void handle_rx_char(char ch);
 static void input_loop(void);
+#ifdef WITH_OUTRIGGER
 static const char *mode_name(enum rig_modes mode);
+#endif
 static void send_char(const char ch);
 static void send_rtty_char(char ch);
 static void setup_log(void);
@@ -207,12 +210,14 @@ int main(int argc, char **argv)
 			case 'F':
 				settings.freq_offset = strtoi(optarg, NULL, 10);
 				break;
+#ifdef WITH_OUTRIGGER
 			case 'R':
 				settings.or_rig = strdup(optarg);
 				break;
 			case 'D':
 				settings.or_dev = strdup(optarg);
 				break;
+#endif
 			case 'a':
 				settings.afsk = true;
 				break;
@@ -721,7 +726,7 @@ send_char(const char ch)
 				usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
 			}
 		}
-		if (rts && rig) {
+		if (rts) {
 			freq = get_rig_freq() + settings.freq_offset;
 			get_rig_mode(mode, sizeof(mode));
 		}
@@ -1026,11 +1031,15 @@ fix_config(void)
 		settings.charset = 0;
 	if (settings.charset > sizeof(charsets) / sizeof(charsets[0]))
 		settings.charset = 0;
-	if ((settings.or_rig == NULL || *settings.or_rig == 0 || settings.or_dev == NULL || *settings.or_dev == 0) &&
+	if (
+#ifdef WITH_OUTRIGGER
+	(settings.or_rig == NULL || *settings.or_rig == 0 || settings.or_dev == NULL || *settings.or_dev == 0) &&
+#endif
 	    (settings.rigctld_host == NULL || settings.rigctld_host[0] == 0 || settings.rigctld_port == 0))
 		settings.ctl_ptt = false;
 }
 
+#ifdef WITH_OUTRIGGER
 static const char *
 mode_name(enum rig_modes mode)
 {
@@ -1059,6 +1068,7 @@ mode_name(enum rig_modes mode)
 			return "FSK";
 	}
 }
+#endif
 
 const char *
 format_freq(uint64_t freq)
@@ -1139,8 +1149,10 @@ get_rig_freq(void)
 	uint64_t ret;
 	char buf[1024];
 
+#ifdef WITH_OUTRIGGER
 	if (rig)
 		return get_frequency(rig, VFO_UNKNOWN);
+#endif
 	if (rigctld_socket != -1) {
 		if (send(rigctld_socket, "f\n", 2, 0) != 2)
 			goto next;
@@ -1164,10 +1176,12 @@ get_rig_mode(char *buf, size_t sz)
 {
 	char tbuf[1024];
 
+#ifdef WITH_OUTRIGGER
 	if (rig) {
 		snprintf(buf, sz, "%s", mode_name(get_mode(rig)));
 		return buf;
 	}
+#endif
 
 	if (rigctld_socket != -1) {
 		if (send(rigctld_socket, "m\n", 2, 0) != 2)
@@ -1201,8 +1215,10 @@ get_rig_ptt(void)
 	int state;
 
 	if (settings.ctl_ptt) {
+#ifdef WITH_OUTRIGGER
 		if (rig)
 			return get_ptt(rig);
+#endif
 
 		if (rigctld_socket != -1) {
 			if (send(rigctld_socket, "t\n", 2, 0) != 2)
@@ -1235,9 +1251,13 @@ set_rig_ptt(bool val)
 	int i;
 
 	if (settings.ctl_ptt) {
+#ifdef WITH_OUTRIGGER
 		if (rig)
 			ret = set_ptt(rig, val);
 		else {
+#else
+		{
+#endif
 			if (rigctld_socket != -1) {
 				sprintf(buf, "T %d\n", val);
 				if (send(rigctld_socket, buf, strlen(buf), 0) != strlen(buf))
