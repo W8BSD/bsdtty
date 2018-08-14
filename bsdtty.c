@@ -154,8 +154,8 @@ static struct charset charsets[] = {
 		  "\rDRJNFCK"
 		  "TZLWHYPQ"
 		  "OBG\x0e" "MXV\x0f"
-		  "\x00" "3\n '87"
-		  "\r\x05" "4\x07,\x00" ":("
+		  "\x00" "3\n- '87"
+		  "\r\x05" "4\x07" ",\x00" ":("
 		  "5+)2\x00" "601"
 		  "9?\x00" "\x0e" "./=\x0f"
 	  },
@@ -181,6 +181,9 @@ int main(int argc, char **argv)
 		while (optarg && isspace(*optarg))
 			optarg++;
 		switch (ch) {
+			case 'f':
+				settings.freq_offset = strtoi(optarg, NULL, 10);
+				break;
 			case 'N':
 				for (c = optarg; *c; c++) {
 					switch (*c) {
@@ -351,8 +354,6 @@ setup_defaults(void)
 #ifdef WITH_OUTRIGGER
 	if (settings.or_rig == NULL)
 		settings.or_rig = strdup("TS-940S");
-	if (settings.or_dev == NULL)
-		settings.or_dev = strdup("/dev/ttyu2");
 #endif
 }
 
