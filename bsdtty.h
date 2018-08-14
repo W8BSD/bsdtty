@@ -17,10 +17,6 @@ struct bt_settings {
 	bool		afsk;
 	char		*callsign;
 	bool		ctl_ptt;
-#ifdef WITH_OUTRIGGER
-	char		*or_rig;
-	char		*or_dev;
-#endif
 	bool		rigctld;
 	char		*rigctld_host;
 	uint16_t	rigctld_port;

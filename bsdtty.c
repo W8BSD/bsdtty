@@ -51,19 +51,11 @@
 #include "fsk_demod.h"
 #include "ui.h"
 
-#ifdef WITH_OUTRIGGER
-#include "api/api.h"
-#include "iniparser/src/dictionary.h"
-#endif
-
 static bool do_tx(void);
 static void done(void);
 static bool get_rts(void);
 static void handle_rx_char(char ch);
 static void input_loop(void);
-#ifdef WITH_OUTRIGGER
-static const char *mode_name(enum rig_modes mode);
-#endif
 static void send_char(const char ch);
 static void send_rtty_char(char ch);
 static void setup_log(void);
@@ -164,11 +156,6 @@ static struct charset charsets[] = {
 	  },
 };
 
-#ifdef WITH_OUTRIGGER
-static dictionary *or_d;
-static struct rig *rig;
-#endif
-
 int main(int argc, char **argv)
 {
 	char *c;
@@ -176,11 +163,7 @@ int main(int argc, char **argv)
 
 	load_config();
 
-#ifdef WITH_OUTRIGGER
-	while ((ch = getopt(argc, argv, "ac:C:d:D:f:hl:m:n:N:p:P:q:Q:r:R:s:t:T1:x:2:3:4:5:6:7:8:9:0:")) != -1) {
-#else
 	while ((ch = getopt(argc, argv, "ac:C:d:f:hl:m:n:N:p:P:q:Q:r:s:t:T1:x:2:3:4:5:6:7:8:9:0:")) != -1) {
-#endif
 		while (optarg && isspace(*optarg))
 			optarg++;
 		switch (ch) {
@@ -210,14 +193,6 @@ int main(int argc, char **argv)
 			case 'F':
 				settings.freq_offset = strtoi(optarg, NULL, 10);
 				break;
-#ifdef WITH_OUTRIGGER
-			case 'R':
-				settings.or_rig = strdup(optarg);
-				break;
-			case 'D':
-				settings.or_dev = strdup(optarg);
-				break;
-#endif
 			case 'a':
 				settings.afsk = true;
 				break;
@@ -356,10 +331,6 @@ setup_defaults(void)
 		settings.callsign = strdup("W8BSD");
 	if (settings.rigctld_host == NULL)
 		settings.rigctld_host = strdup("localhost");
-#ifdef WITH_OUTRIGGER
-	if (settings.or_rig == NULL)
-		settings.or_rig = strdup("TS-940S");
-#endif
 }
 
 static void
@@ -829,10 +800,6 @@ done(void)
 
 	if (settings.ctl_ptt) {
 		set_rig_ptt(false);
-#ifdef WITH_OUTRIGGER
-		if (rig)
-			close_rig(rig);
-#endif
 		if (rigctld_socket != -1)
 			close(rigctld_socket);
 	}
@@ -903,10 +870,6 @@ usage(const char *cmd)
 	       "-a  Use AFSK (no argument)\n"
 	       "-C  Callsign                     \"W8BSD\"\n"
 	       "-T  Use rig control PTT (no argument)\n"
-#ifdef WITH_OUTRIGGER
-	       "-R  Outrigger rig name           \"TS-940S\"\n"
-	       "-D  Outrigger port device name   \"/dev/ttyu2\"\n"
-#endif
 	       "-f  VFO frequency offset         170\n"
 	       "-x  XML-RPC host name            \"localhost\"\n"
 	       "-P  XML-RPC port                 7362\n"
@@ -954,33 +917,6 @@ setup_rig_control(void)
 	char port[6];
 	int opt;
 
-#ifdef WITH_OUTRIGGER
-	if (or_d) {
-		dictionary_del(or_d);
-		or_d = NULL;
-	}
-	if (rig) {
-		close_rig(rig);
-		rig = NULL;
-	}
-	if (settings.or_rig && settings.or_rig[0] &&
-	    settings.or_dev && settings.or_dev[0]) {
-		if (or_d)
-			dictionary_del(or_d);
-		or_d = dictionary_new(0);
-
-		dictionary_set(or_d, "rig:rig", settings.or_rig);
-		dictionary_set(or_d, "rig:port", settings.or_dev);
-
-		if (rig)
-			close_rig(rig);
-		rig = init_rig(or_d, "rig");
-		if (settings.ctl_ptt && rig == NULL)
-			printf_errno("unable to control rig");
-		if (rig != NULL)
-			return;
-	}
-#endif
 	if (rigctld_socket != -1) {
 		close(rigctld_socket);
 		rigctld_socket = -1;
@@ -1031,44 +967,9 @@ fix_config(void)
 		settings.charset = 0;
 	if (settings.charset > sizeof(charsets) / sizeof(charsets[0]))
 		settings.charset = 0;
-	if (
-#ifdef WITH_OUTRIGGER
-	(settings.or_rig == NULL || *settings.or_rig == 0 || settings.or_dev == NULL || *settings.or_dev == 0) &&
-#endif
-	    (settings.rigctld_host == NULL || settings.rigctld_host[0] == 0 || settings.rigctld_port == 0))
+	if (settings.rigctld_host == NULL || settings.rigctld_host[0] == 0 || settings.rigctld_port == 0)
 		settings.ctl_ptt = false;
 }
-
-#ifdef WITH_OUTRIGGER
-static const char *
-mode_name(enum rig_modes mode)
-{
-	switch(mode) {
-		case MODE_UNKNOWN:
-			return "";
-		case MODE_CW:
-			return "CW";
-		case MODE_CWN:
-			return "CWN";
-		case MODE_CWR:
-			return "CWR";
-		case MODE_CWRN:
-			return "CWRN";
-		case MODE_AM:
-			return "AM";
-		case MODE_LSB:
-			return "LSB";
-		case MODE_USB:
-			return "USB";
-		case MODE_FM:
-			return "FM";
-		case MODE_FMN:
-			return "FMN";
-		case MODE_FSK:
-			return "FSK";
-	}
-}
-#endif
 
 const char *
 format_freq(uint64_t freq)
@@ -1149,10 +1050,6 @@ get_rig_freq(void)
 	uint64_t ret;
 	char buf[1024];
 
-#ifdef WITH_OUTRIGGER
-	if (rig)
-		return get_frequency(rig, VFO_UNKNOWN);
-#endif
 	if (rigctld_socket != -1) {
 		if (send(rigctld_socket, "f\n", 2, 0) != 2)
 			goto next;
@@ -1175,13 +1072,6 @@ const char *
 get_rig_mode(char *buf, size_t sz)
 {
 	char tbuf[1024];
-
-#ifdef WITH_OUTRIGGER
-	if (rig) {
-		snprintf(buf, sz, "%s", mode_name(get_mode(rig)));
-		return buf;
-	}
-#endif
 
 	if (rigctld_socket != -1) {
 		if (send(rigctld_socket, "m\n", 2, 0) != 2)
@@ -1215,11 +1105,6 @@ get_rig_ptt(void)
 	int state;
 
 	if (settings.ctl_ptt) {
-#ifdef WITH_OUTRIGGER
-		if (rig)
-			return get_ptt(rig);
-#endif
-
 		if (rigctld_socket != -1) {
 			if (send(rigctld_socket, "t\n", 2, 0) != 2)
 				goto next;
@@ -1251,29 +1136,21 @@ set_rig_ptt(bool val)
 	int i;
 
 	if (settings.ctl_ptt) {
-#ifdef WITH_OUTRIGGER
-		if (rig)
-			ret = set_ptt(rig, val);
-		else {
-#else
-		{
-#endif
-			if (rigctld_socket != -1) {
-				sprintf(buf, "T %d\n", val);
-				if (send(rigctld_socket, buf, strlen(buf), 0) != strlen(buf))
-					goto next;
-				if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0) {
-					close(rigctld_socket);
-					rigctld_socket = -1;
-					if (settings.ctl_ptt)
-						printf_errno("lost connection setting rig PTT");
-					goto next;
-				}
-				if (strcmp(buf, "RPRT 0") == 0)
-					ret = true;
-				else
-					ret = false;
+		if (rigctld_socket != -1) {
+			sprintf(buf, "T %d\n", val);
+			if (send(rigctld_socket, buf, strlen(buf), 0) != strlen(buf))
+				goto next;
+			if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0) {
+				close(rigctld_socket);
+				rigctld_socket = -1;
+				if (settings.ctl_ptt)
+					printf_errno("lost connection setting rig PTT");
+				goto next;
 			}
+			if (strcmp(buf, "RPRT 0") == 0)
+				ret = true;
+			else
+				ret = false;
 		}
 		if (ret) {
 			for (i = 0; i < 200; i++) {

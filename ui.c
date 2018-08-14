@@ -782,23 +782,6 @@ struct field_info {
 		.flen = 2,
 		.eol = true
 	},
-#ifdef WITH_OUTRIGGER
-	{
-		.name = "Outrigger rig",
-		.key = "outriggerrig",
-		.type = STYPE_STRING,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, or_rig),
-		.flen = 10
-	},
-	{
-		.name = "Outrigger device",
-		.key = "outriggerdev",
-		.type = STYPE_STRING,
-		.ptr = (char *)(&settings) + offsetof(struct bt_settings, or_dev),
-		.flen = 20,
-		.eol = true
-	},
-#endif
 	{
 		.name = "Mark VFO offset",
 		.key = "freqoffset",
