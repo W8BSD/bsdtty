@@ -584,13 +584,10 @@ do_tx(void)
 			display_charset(charsets[settings.charset].name);
 			break;
 		case ']':
-			// TODO: CR is expanded to CRLF...
-#if 0
 			settings.charset++;
 			if (settings.charset == sizeof(charsets) / sizeof(charsets[0]))
 				settings.charset = 0;
 			display_charset(charsets[settings.charset].name);
-#endif
 			break;
 		case '\\':
 			reset_tuning_aid();
@@ -647,6 +644,7 @@ do_macro(int fkey)
 				send_char('\r');
 				break;
 			case ']':
+				// TODO: CR is expanded to CRLF...
 				send_char('\n');
 				break;
 			case '^':
