@@ -674,7 +674,6 @@ send_char(const char ch)
 	const char fstr[] = "\x1f\x1b"; // LTRS, FIGS
 	char bch;
 	bool rts;
-	int state;
 	char ach;
 	time_t now;
 	static uint64_t freq = 0;
@@ -685,7 +684,6 @@ send_char(const char ch)
 
 	if (ch == '\t' || (!rts && bch != 0)) {
 		rts = !rts;
-		state = TIOCM_RTS;
 		if (!rts) {
 			if (send_end_space)
 				send_rtty_char(4);

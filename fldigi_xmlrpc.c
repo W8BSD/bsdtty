@@ -112,19 +112,15 @@ setup_xmlrpc(void)
 				if ((ret = listen(sock, 8)) == 0) {
 					nlsocks++;
 					tmp = realloc(lsocks, sizeof(*lsocks) * nlsocks);
-					if (tmp == NULL) {
+					if (tmp == NULL)
 						close(sock);
-						sock = -1;
-					}
 					else {
 						lsocks = tmp;
 						lsocks[nlsocks - 1] = sock;
 					}
 				}
-				else {
+				else
 					close(sock);
-					sock = -1;
-				}
 				break;
 			}
 			else {
@@ -182,10 +178,8 @@ handle_xmlrpc(void)
 					if (sock != -1) {
 						ncsocks++;
 						tmp = realloc(csocks, sizeof(*csocks) * ncsocks);
-						if (tmp == NULL) {
+						if (tmp == NULL)
 							close(sock);
-							sock = -1;
-						}
 						else {
 							csocks = tmp;
 							csocks[ncsocks - 1] = sock;

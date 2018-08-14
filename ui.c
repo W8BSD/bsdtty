@@ -489,7 +489,7 @@ check_input(void)
 	return false;
 }
 
-void
+noreturn void
 printf_errno(const char *format, ...)
 {
 	int eno = errno;

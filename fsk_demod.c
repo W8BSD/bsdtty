@@ -30,6 +30,7 @@
 #include <sys/soundcard.h>
 #include <sys/types.h>
 
+#include <assert.h>
 #include <curses.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -356,7 +357,7 @@ get_bit(void)
 			nsamp++;
 		}
 		/* Sampling is over, look for jitter */
-		if (phase > 0.97) {
+		if (phase > 0.97 && nsamp == 1) {
 			if ((cv < 0.0) != (tot <= 0)) {
 				// Value change... assume this is the end of the bit.
 				// Set start phase for next bit.
@@ -366,6 +367,7 @@ get_bit(void)
 		}
 	}
 	/* We over-read this bit... adjust next bit phase */
+	assert(nsamp);
 	phase = -(1.0 - phase);
 	return tot > 0;
 }

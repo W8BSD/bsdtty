@@ -2,6 +2,7 @@
 #define UI_H
 
 #include <stdbool.h>
+#include <stdnoreturn.h>
 
 #define RTTY_FUNC_KEY		0x01E0
 #define RTTY_FUNC_KEY_MASK	0x001f
@@ -30,7 +31,7 @@ int get_input(void);
 void write_tx(char ch);
 void write_rx(char ch);
 bool check_input(void);
-void printf_errno(const char *format, ...);
+noreturn void printf_errno(const char *format, ...);
 void show_reverse(bool rev);
 void change_settings(void);
 void load_config(void);
