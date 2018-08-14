@@ -33,6 +33,8 @@ Controls:
 | CTRL-W      | Cycle through crossed bananas, ASCIIfall, and TX       |
 | Left-arrow  | Lower squelch level by one                             |
 | Right-arrow | Raise squelch level by one                             |
+| Up-arrow    | Increments the serial number                           |
+| Down-arrow  | Decrements the serial number                           |
 | Left-click  | Select callsing from RX window                         |
 | Right-click | Toggle LTRS/FIGS shift on the clicked word (see below) | 
 
@@ -47,13 +49,15 @@ RX window.
 
 Special characters can be used in macros:
 
-| Character | Meaning         |
-| --------- | --------------- |
-| \         | Your callsign   |
-| `         | Their callsign  |
-| [         | Carriage return |
-| ~         | Tab (toggle TX) |
-| _         | Trailing space  |
+| Character | Meaning                   |
+| --------- | ------------------------- |
+| \         | Your callsign             |
+| `         | Their callsign            |
+| [         | Carriage return           |
+| ~         | Tab (toggle TX)           |
+| _         | Trailing space            |
+| ^         | Increment and show serial |
+| %         | Current serial number     |
 
 The trailing space is only valid at the end of the macro.
 
@@ -67,6 +71,5 @@ The background of the frequency changes colour based on common usage:
 
 Outstanding issues:
 * I should idle with LTRS, not a mark signal... super tricky.
-* Really needs a manpage.
 * Add CQRLOG integration.
 * Deal with explicit LFs in macros... CR is expanded to CRLF

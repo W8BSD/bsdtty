@@ -1,0 +1,266 @@
+.Dd August 13, 2018
+.Dt BSDTTY 1
+.Sh NAME
+.Nm bsdtty
+.Nd BSD RTTY Client
+.Sh SYNOPSIS
+.Nm
+.Op Fl ahT
+.Op Fl c charset
+.Op Fl C callsign
+.Op Fl d baud_denominator
+.Op Fl D or_dev
+.Op Fl f freq_offset
+.Op Fl l logfile
+.Op Fl m mark_freq
+.Op Fl n baud_numerator
+.Op Fl N suppress
+.Op Fl p dsp_device
+.Op Fl P xmlrpc_port
+.Op Fl q bp_filter_q
+.Op Fl Q lp_filter_q
+.Op Fl r dsp_rate
+.Op Fl R or_rig
+.Op Fl s space_freq
+.Op Fl t tty_device
+.Op Fl x xmlrpc_host
+.Op Fl 1 f1_macro
+.Op Fl 2 f2_macro
+.Op Fl 3 f3_macro
+.Op Fl 4 f4_macro
+.Op Fl 5 f5_macro
+.Op Fl 6 f6_macro
+.Op Fl 7 f7_macro
+.Op Fl 8 f8_macro
+.Op Fl 9 f9_macro
+.Op Fl 0 f10_macro
+.Sh DESCRIPTION
+The
+.Nm
+utility provides an RTTY terminal with a "crossed bananas" and waterfall display
+on an ncurses terminal.
+.Pp
+The options are as follows:
+.Bl -tag -width indent
+.It Fl a
+Enable AFSK mode.
+.It Fl c Ar charset
+Use the specified charset.
+0 indicates the most common ITA2 variant, 1 indicates the US-TTY variant,
+and 2 indicates a strict ITA2 with no national characters.
+Default is 0.
+.It Fl C Ar callsign
+Specifies the callsign of the station operator.
+Default is W8BSD.
+.It Fl d Ar baud_denominator
+The deominator of the baudrate to use.
+Default is 1000
+.It Fl D Ar or_dev
+Full path to tty to use with Outrigger support.
+Default is an empty string.
+.It Fl f Ar freq_offset
+Frequency offset from the VFO value to the mark frequency.
+This is only used if either rigctld or outrigger support is enabled.
+Default is 170.
+.It Fl h
+Displays usage help.
+.It Fl l Ar logfile
+Specifies the path and filename of the logfile for TX and RX adata.
+Default is bsdtty.log
+.It Fl m Ar mark_freq
+The mark frequency in the receive and transmit audio.
+Default is 2125.
+.It Fl N Ar suppress
+By default, bsdtty adds a CRLF to the start of all transmissions, and
+a single space to the end.  If
+.Ar suppress
+contains an s, the start CRLF
+is suppressed.  If
+.Ar suppress
+contains an e, the ending space is suppressed.
+.It Fl p Ar dsp_device
+Specifies the full path to the DSP device to use.
+Default is /dev/dsp8
+.It Fl P Ar xmlrpc_port
+Sets the XML-RPC port for Fldigi emulation.
+Default is 7362
+.It Fl q Ar bp_filter_q
+If
+.Nm
+was compiled without matched filters, specifies the Q of the mark/space bandpass
+filters.
+Default is 10.
+.It Fl Q Ar lp_filter_q
+Specifies the Q of the lowpass filter used for envelope detection.
+Default is 0.5
+.It Fl r Ar dsp_rate
+Sets the rate for recording and playback via the DSP.
+Default is 8000.
+.It Fl R Ar or_rig
+The rig type for Outrigger support.
+Default is TS-940S
+.It Fl s Ar space_freq
+The space frequency in the receive and transmit audio.
+Default is 2295.
+.It Fl t Ar tty_device
+Full pathname to tty device for FSK and RTS PTT.
+Default is /dev/ttyu9.
+.It Fl x Ar xmlrpc_host
+Hostname to listen on for XML-RPC requests (Fldigi emulation).
+Default is an empty string.
+.It Fl 1 2 3 4 5 6 7 8 9 0
+Specifies the macros to send when Fx is pressed.
+.Fl 0
+specifies the F10 macro.
+.El
+.Pp
+When
+.Nm
+starts, it is in RX mode.  TX mode can be entered by typing any valid
+baudot characters, or via the TAB key.
+Transmission will continue until TAB is pressed again.
+.Pp
+When in RX mode, the following extra commands can be used:
+.Bl -tag -width indent
+.It `
+Toggles reverse mode.  In AFSK mode (when
+.Fl a
+is specified), the TX and RX signals are reversed.
+In FSK mode (the default), on the RX signals are reverse.
+.It [
+Switches to the previous character set.
+This only affects characters transmitted and received after the change is made.
+.It ]
+Switches to the next character set.
+This only affects characters transmitted and received after the change is made.
+.It BACKSPACE
+Opens the configuration editor.
+In the configuration editor, arrow keys move between and inside fields.
+ENTER will save changes, and CTRL-C aborts editing.
+.It CTRL-C
+Exits bsdtty.
+.It CTRL-L
+Clears the RX window.
+.It CTRL-W
+Toggles the tuning aid display. Cycles between the crossed banana, waterfall, and none
+tuning aids.
+.It LEFT
+Lowers the character squelch.  This specifies the number of characters that must be
+received one after another before any characters are displayed.
+.It RIGHT
+Increases the character squelch.  This specifies the number of characters that must be
+received one after another before any characters are displayed.
+.It UP
+Increments the current serial number.
+.It DOWN
+Decrements the current serial number.
+.It LEFT-CLICK
+Selects a callsign.  The callsign is displayed in the status line, and can be send via
+the ` character in a macro.
+.It RIGHT-CLICK
+Toggles the shift in the word under the mouse.
+The toggle extends in both directions to the next whitespace or shift.
+.El
+.Sh MACROS
+.Pp
+Macros are sent using the functions keys F1 to F10.
+.Pp
+Sending a macro which starts with "CQ CQ" or ends with " CQ" will clear the RX window.
+.Pp
+Special characters can be used in macros.
+.Bl -tag -width indent
+.It \\
+Sends the value specified in the Callsign configuration option of via the
+.Fl C
+argument.
+.It `
+Sends the currently captured callsign (via LEFT-CLICK).
+.It [
+Sends a CRLF pair.
+.It ~
+Disables TX and terminates the macro.
+.It _
+Sends a space character, terminates the macro, but leaves
+.Nm
+in transmit mode.
+.It ^
+Increments the serial number then sends it as at least three
+digits.
+.It %
+Sends the serial number as at least three digits.
+.El
+.Pp
+Some default macros are pre-configured in
+.Nm .
+.Bl -tag -width indent
+.It F2
+"CQ CQ CQ CQ CQ CQ DE \\ \\ \\ PSE K~"
+.It F3
+"\ "
+.It F4
+"` DE `~"
+.El
+.Sh THE SCREEN
+The screen is divided into three sections sub-windows
+.Bl -tag -width indent
+.It Status
+The status window is one line high and contains the following:
+.Bl -tag -width indent
+.It REV
+If REV is displayed, indicates that reverse mode is enabled.
+In AFSK mode, this indicates that both RX and TX tones are reversed.
+In FSK mode, indicates that just RX tones are reversed.
+.It Ar charset
+The abbreviation of the current character set:
+.Bl -tag -width indent
+.It ITA2
+The most common ITA2 character set.  This includes the '#' figure (shifted D),
+the '@' figure (shifted F), the '$' figure (shifted H), and the '*' figure (shifted G).
+.It USTTY
+The most common US variant of baudot.  This swaps the BEL and ' characters, includes
+the '$' figure (shifted D), the '!' figure (shifted F), the '"' figure (shifted Z),
+the '#' figure (shifted H), the '&' figure (shifted G), and the ';' figure (shifted V)
+Is missing the '+' and '=' figures from the standard ITA2 character set (replaced by
+'&' and ';').
+.It ITA2(S)
+This is the official ITA2 charset from ITU-T S.1.  It is identical to 
+.Ar ITA2
+except shifted D is the ENQ character, and shifted F, H, and G ('@', '$', and '*') are not valid.
+.El
+.It Ar frequency
+If Outrigger or rigctld is enabled, displays the current mark frequency.
+The VFO offset should be set for this to be accurate.
+.Pp
+The background colour of the frequency changes based on the current frequency in
+the HF bands.  If the background is green, the current frequency is in the normal RTTY
+subbands.  If the background is black, the frequency is in the subbands normally used
+in contests.  If the background is yellow or brown, indicates that RTTY is legal in the US
+at this frequency, but it is almost never used for RTTY.  If the background is red, indicates
+that RTTY is not allowed on the current frequency.
+.Pp
+The background will only be red if the configured callsign is in the US.  It may also be incorrect
+for US hams in ITU region 1.
+.It Ar mode
+Indicates the mode the rg is currently in (ie: 'USB', 'LSB', 'RTTY', etc).
+.It Ar callsign
+The current callsign selected by left-click and used for the ` macro character.
+.It SQL Ar x
+Where x is a value between 1 and 9 inclusive.
+This indicates the number of characters that must be received after each other before
+any characters are displayed.
+This is an experimental feature, and likely shouldn't be used.
+.It Ar serial
+The current serial number formatted as at least three digits.
+.It Ar VU
+Ad the end of the status window is a VU meder.
+.El
+.It RX
+Shows decoded characters.
+It is in this window that the left and right mouse buttons have effect.
+.It TX
+The TX window shows what you have send and are currently sending.
+In RX mode, can be toggled with the CTRL-W key to one of the two tuning aids.
+.It Tuning Aid
+Displays either a crossed bananas graph or a waterfall in RX mode.
+Toggle this using CTRL-W.
+.El
