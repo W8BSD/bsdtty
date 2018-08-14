@@ -51,7 +51,7 @@
 #include "fsk_demod.h"
 #include "ui.h"
 
-static bool do_tx(void);
+static bool do_tx(int *rxstate);
 static void done(void);
 static bool get_rts(void);
 static void handle_rx_char(char ch);
@@ -467,14 +467,14 @@ input_loop(void)
 	while (1) {
 		handle_xmlrpc();
 		if (get_rig_ptt()) {	// TX Mode
-			if (!do_tx())
+			if (!do_tx(&rxstate))
 				return;
 			reset_rx();
 			rxstate = -1;
 		}
 		else {
 			if (check_input()) {
-				if (!do_tx())
+				if (!do_tx(&rxstate))
 					return;
 				continue;
 			}
@@ -504,7 +504,7 @@ input_loop(void)
 }
 
 static bool
-do_tx(void)
+do_tx(int *rxstate)
 {
 	int ch;
 
@@ -576,6 +576,7 @@ do_tx(void)
 			break;
 		case '`':
 			toggle_reverse(&reverse);
+			*rxstate = -1;
 			break;
 		case '[':
 			settings.charset--;
@@ -598,8 +599,10 @@ do_tx(void)
 			break;
 		case 0x7f:
 		case 0x08:
-			if (!get_rts())
+			if (!get_rts()) {
 				change_settings();
+				*rxstate = -1;
+			}
 			break;
 		default:
 			send_char(ch);

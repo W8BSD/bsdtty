@@ -314,6 +314,7 @@ setup_audio(void)
 	dsp_buf = malloc(sizeof(dsp_buf[0]) * dsp_buflen);
 	if (dsp_buf == NULL)
 		printf_errno("allocating dsp buffer");
+	head = tail = 0;
 	dsp_bufmax = dsp_buflen - 1;
 
 	generate_afsk_samples();
@@ -671,12 +672,12 @@ fir_filter(int16_t value, struct fir_filter *f)
 	size_t i;
 	double res = 0;
 
-	f->buf[f->head] = value;
-	res = f->buf[f->head] * f->coef[0];
+	f->buf[f->head] = (double)value;
 	f->head = next(f->head, f->len - 1);
-
 	memcpy(f->tbuf, &f->buf[f->head], (f->len - f->head) * sizeof(f->tbuf[0]));
-	memcpy(f->tbuf + (f->len - f->head), f->buf, f->head * sizeof(f->tbuf[0]));
+	if (f->head)
+		memcpy(f->tbuf + (f->len - f->head), f->buf, f->head * sizeof(f->tbuf[0]));
+
 	for (i = 0; i < f->len; i++)
 		f->tbuf[i] *= f->coef[i];
 
