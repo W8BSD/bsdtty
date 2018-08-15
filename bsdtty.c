@@ -167,8 +167,50 @@ int main(int argc, char **argv)
 		while (optarg && isspace(*optarg))
 			optarg++;
 		switch (ch) {
+			case '0':
+				settings.macros[9] = strdup(optarg);
+				break;
+			case '1':
+			case '2':
+			case '3':
+			case '4':
+			case '5':
+			case '6':
+			case '7':
+			case '8':
+			case '9':
+				settings.macros[ch-'1'] = strdup(optarg);
+				break;
+			case 'a':
+				settings.afsk = true;
+				break;
+			case 'c':
+				settings.charset = strtoi(optarg, NULL, 10);
+				if (settings.charset < 0 || settings.charset >= sizeof(charsets) / sizeof(charsets[0]))
+					settings.charset = 0;
+				break;
+			case 'C':
+				settings.callsign = strdup(optarg);
+				break;
+			case 'd':	// baud_denominator
+				settings.baud_denominator = strtoi(optarg, NULL, 10);
+				break;
 			case 'f':
 				settings.freq_offset = strtoi(optarg, NULL, 10);
+				break;
+			case 'F':
+				settings.freq_offset = strtoi(optarg, NULL, 10);
+				break;
+			case 'h':
+				usage(argv[0]);
+			case 'l':	// log_name
+				settings.log_name = strdup(optarg);
+				break;
+			case 'm':	// mark_freq
+				settings.mark_freq = strtod(optarg, NULL);
+				break;
+			case 'n':	// baud_numerator
+				settings.baud_numerator = strtoi(optarg, NULL, 10);
 				break;
 			case 'N':
 				for (c = optarg; *c; c++) {
@@ -182,34 +224,11 @@ int main(int argc, char **argv)
 					}
 				}
 				break;
-			case 'x':
-				settings.xmlrpc_host = strdup(optarg);
+			case 'p':	// dsp_name
+				settings.dsp_name = strdup(optarg);
 				break;
 			case 'P':
 				settings.xmlrpc_port = strtoi(optarg, NULL, 10);
-				break;
-			case 'h':
-				usage(argv[0]);
-			case 'F':
-				settings.freq_offset = strtoi(optarg, NULL, 10);
-				break;
-			case 'a':
-				settings.afsk = true;
-				break;
-			case 'C':
-				settings.callsign = strdup(optarg);
-				break;
-			case 'n':	// baud_numerator
-				settings.baud_numerator = strtoi(optarg, NULL, 10);
-				break;
-			case 'd':	// baud_denominator
-				settings.baud_denominator = strtoi(optarg, NULL, 10);
-				break;
-			case 'r':	// dsp_rate
-				settings.dsp_rate = strtoi(optarg, NULL, 10);
-				break;
-			case 'l':	// log_name
-				settings.log_name = strdup(optarg);
 				break;
 			case 'q':	// bp_filter_q
 				settings.bp_filter_q = strtod(optarg, NULL);
@@ -217,39 +236,20 @@ int main(int argc, char **argv)
 			case 'Q':	// lp_filter_q1
 				settings.lp_filter_q = strtod(optarg, NULL);
 				break;
-			case 'm':	// mark_freq
-				settings.mark_freq = strtod(optarg, NULL);
+			case 'r':	// dsp_rate
+				settings.dsp_rate = strtoi(optarg, NULL, 10);
 				break;
 			case 's':	// space_freq
 				settings.space_freq = strtod(optarg, NULL);
 				break;
-			case 'T':
-				settings.ctl_ptt = true;
-				break;
 			case 't':	// tty_name
 				settings.tty_name = strdup(optarg);
 				break;
-			case 'p':	// dsp_name
-				settings.dsp_name = strdup(optarg);
+			case 'T':
+				settings.ctl_ptt = true;
 				break;
-			case '1':
-			case '2':
-			case '3':
-			case '4':
-			case '5':
-			case '6':
-			case '7':
-			case '8':
-			case '9':
-				settings.macros[ch-'1'] = strdup(optarg);
-				break;
-			case '0':
-				settings.macros[9] = strdup(optarg);
-				break;
-			case 'c':
-				settings.charset = strtoi(optarg, NULL, 10);
-				if (settings.charset < 0 || settings.charset >= sizeof(charsets) / sizeof(charsets[0]))
-					settings.charset = 0;
+			case 'x':
+				settings.xmlrpc_host = strdup(optarg);
 				break;
 			default:
 				usage(argv[0]);
