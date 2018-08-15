@@ -10,6 +10,8 @@
 .Op Fl C callsign
 .Op Fl d baud_denominator
 .Op Fl f freq_offset
+.Op Fl i rigctld_host
+.Op Fl I rigctld_port
 .Op Fl l logfile
 .Op Fl m mark_freq
 .Op Fl n baud_numerator
@@ -59,6 +61,12 @@ This is only used if rigctld support is enabled.
 Default is 170.
 .It Fl h
 Displays usage help.
+.It Fl i Ar rigctld_host
+Hostname to connect to for rigctld rig control.
+If hostname is a zero-length string, rigctld support is disabled.
+.It Fl I Ar rigctld_port
+Port number to connect to for rigctld rig control.
+If port is zero, rigctld support is disabled.
 .It Fl l Ar logfile
 Specifies the path and filename of the logfile for TX and RX adata.
 Default is bsdtty.log

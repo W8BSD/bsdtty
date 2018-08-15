@@ -164,7 +164,7 @@ int main(int argc, char **argv)
 
 	load_config();
 
-	while ((ch = getopt(argc, argv, "ac:C:d:f:hl:m:n:N:p:P:q:Q:r:s:t:T1:x:2:3:4:5:6:7:8:9:0:")) != -1) {
+	while ((ch = getopt(argc, argv, "ac:C:d:f:hl:i:I:m:n:N:p:P:q:Q:r:s:t:T1:x:2:3:4:5:6:7:8:9:0:")) != -1) {
 		while (optarg && isspace(*optarg))
 			optarg++;
 		switch (ch) {
@@ -204,6 +204,12 @@ int main(int argc, char **argv)
 				break;
 			case 'h':
 				usage(argv[0]);
+			case 'i':
+				settings.rigctld_host = strdup(optarg);
+				break;
+			case 'I':
+				settings.rigctld_port = strtoi(optarg, NULL, 10);
+				break;
 			case 'l':	// log_name
 				settings.log_name = strdup(optarg);
 				break;
@@ -877,6 +883,8 @@ usage(const char *cmd)
 	       "    Turns off automatically added text.  If 's' is included,\n"
 	       "    the starting CRLF is not sent.  If 'e' is included, the\n"
 	       "    ending space is not sent.\n"
+	       "-i  rigctld host name            \"localhost\"\n"
+	       "-I  rigctld port                 4532\n"
 	       "\n", cmd);
 	exit(EXIT_FAILURE);
 }
