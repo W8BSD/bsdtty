@@ -41,6 +41,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdnoreturn.h>
 #include <string.h>
 #include <termios.h>
 #include <time.h>
@@ -62,7 +63,7 @@ static void setup_log(void);
 static void setup_rig_control(void);
 static void setup_tty(void);
 static int sock_readln(int sock, char *buf, size_t bufsz);
-static void usage(const char *cmd);
+noreturn static void usage(const char *cmd);
 static void setup_defaults(void);
 
 struct bt_settings settings = {
@@ -838,7 +839,7 @@ strtoi(const char *nptr, char **endptr, int base)
 	return ret;
 }
 
-static void
+noreturn static void
 usage(const char *cmd)
 {
 	printf("\n"
