@@ -128,6 +128,7 @@ setup_curses(void)
 	 * in wgetch() as well.
 	 */
 	mouseinterval(0);
+	typeahead(-1);
 }
 
 void
@@ -258,7 +259,9 @@ get_input(void)
 	int ret;
 	MEVENT ev;
 
+	typeahead(STDIN_FILENO);
 	ret = wgetch(tx);
+	typeahead(-1);
 	switch(ret) {
 		case ERR:
 			return -1;
@@ -358,15 +361,25 @@ show_freq(void)
 {
 	uint64_t freq;
 	char fstr[32];
+	char mode[32];
 	bool american = false;
 	bool legal = false;
 	bool subband = false;
 	bool contest = false;
+	bool update = false;
+	static time_t last = 0;
+	time_t now;
 
-	freq = get_rig_freq();
+	now = time(NULL);
+	if (now == last)
+		return;
+	last = now;
+	get_rig_freq_mode(&freq, mode, sizeof(mode));
 	if (freq == 0)
 		return;
 	freq += settings.freq_offset;
+	if (freq != last)
+		update = true;
 	switch (toupper(settings.callsign[0])) {
 		case 'A':
 			if (toupper(settings.callsign[0]) > 'L')
@@ -451,14 +464,14 @@ show_freq(void)
 		}
 	}
 	wcolor_set(status, TTY_COLOR_NORMAL, NULL);
-	get_rig_mode(fstr, sizeof(fstr));
-	if (strcmp(fstr, last_mode)) {
+	if (strcmp(mode, last_mode)) {
 		wmove(status, 0, 30);
-		w_printf(status, "%-5s", fstr);
+		w_printf(status, "%-5s", mode);
+		update = true;
 	}
-	if (strcmp(fstr, last_mode) || last_freq != freq)
+	if (update)
 		wrefresh(status);
-	strcpy(last_mode, fstr);
+	strcpy(last_mode, mode);
 	last_freq = freq;
 }
 
@@ -469,7 +482,9 @@ check_input(void)
 	int ch;
 
 	show_freq();
+	typeahead(STDIN_FILENO);
 	ch = wgetch(rx);
+	typeahead(-1);
 	if (ch == KEY_MOUSE) {
 		getmouse(&ev);
 		if (ev.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED))
@@ -612,10 +627,13 @@ setup_windows(void)
 	wtimeout(tx, 0);
 	wtimeout(tuning_aid, 0);
 	wtimeout(rx, 0);
+	wtimeout(stdscr, -1);
 	keypad(rx, TRUE);
 	keypad(tx, TRUE);
 	keypad(tuning_aid, TRUE);
 	show_reverse(reverse);
+	leaveok(tuning_aid, TRUE);
+	leaveok(status, TRUE);
 }
 
 static void
@@ -1301,12 +1319,20 @@ audio_meter(int16_t envelope)
 	int i = 0;
 	int sz = tx_width - 66;
 	int blocks;
+	static int laste = -1;
+	static int lastb = -1;
 
+	if (envelope == laste)
+		return;
+	laste = envelope;
 	if (sz < 1)
 		return;
 	blocks = envelope / (INT16_MAX / (sz * 3));
 	if (blocks > (sz * 3))
 		blocks = (sz * 3);
+	if (blocks == lastb)
+		return;
+	lastb = blocks;
 	wmove(status, 0, 66);
 	wclrtoeol(status);
 	wcolor_set(status, TTY_COLOR_GREEN_VU, NULL);
@@ -1484,7 +1510,7 @@ toggle_figs(int y, int x)
 void
 clear_rx_window(void)
 {
-	wclear(rx);
+	werase(rx);
 	wmove(rx, 0, 0);
 	wrefresh(rx);
 }

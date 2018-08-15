@@ -24,7 +24,6 @@
  *
  */
 
-//#define RX_OVERRUNS
 #define MATCHED_FILTERS
 
 #include <sys/soundcard.h>
@@ -47,10 +46,8 @@
 
 struct fir_filter {
 	size_t		len;
-	double		*buf;
-	double		*tbuf;
-	double		*coef;
-	size_t		head;
+	float		*buf;
+	float		*coef;
 };
 
 struct bq_filter {
@@ -59,9 +56,6 @@ struct bq_filter {
 };
 
 /* RX Stuff */
-#ifdef RX_OVERRUNS
-static int last_ro = -1;
-#endif
 static double phase_rate;
 static double phase = 0.0;
 // Mark filter
@@ -102,10 +96,6 @@ static int hfs_stop2;
 static int dsp = -1;
 static int dsp_afsk = -1;
 static int dsp_channels = 1;
-static int16_t *dsp_buf;
-static int head;
-static int tail;	// Empty when equal
-static size_t dsp_bufmax;
 static struct bq_filter **waterfall_bp;
 static struct bq_filter **waterfall_lp;
 size_t waterfall_width;
@@ -142,7 +132,7 @@ static int next(int val, int max);
 #if 0 // suppress warning
 static int prev(int val, int max);
 #endif
-static void read_audio(void);
+static int16_t read_audio(void);
 static void send_afsk_buf(struct afsk_buf *buf);
 static void setup_audio(void);
 static struct fir_filter * create_matched_filter(double frequency);
@@ -226,31 +216,34 @@ get_rtty_ch(int state)
 		 * Now we're in HfS mode
 		 * First, check the existing buffer.
 		 */
-		if (hfs_buf[hfs_tail] >= 0.0 && hfs_buf[next(hfs_tail, hfs_bufmax)] < 0.0) {
-			/* If there's a valid character in there, return it. */
-			if (hfs_buf[hfs_start] < 0.0 &&
-			    hfs_buf[hfs_stop1] >= 0.0 &&
-			    hfs_buf[hfs_stop2] >= 0.0) {
-				return (hfs_buf[hfs_b0] > 0.0) |
-					((hfs_buf[hfs_b1] > 0.0) << 1) |
-					((hfs_buf[hfs_b2] > 0.0) << 2) |
-					((hfs_buf[hfs_b3] > 0.0) << 3) |
-					((hfs_buf[hfs_b4] > 0.0) << 4);
+		do {
+			if (hfs_buf[hfs_tail] >= 0.0 && hfs_buf[next(hfs_tail, hfs_bufmax)] < 0.0) {
+				/* If there's a valid character in there, return it. */
+				if (hfs_buf[hfs_start] < 0.0 &&
+				    hfs_buf[hfs_stop1] >= 0.0 &&
+				    hfs_buf[hfs_stop2] >= 0.0) {
+					phase = phase_rate;
+					return (hfs_buf[hfs_b0] > 0.0) |
+						((hfs_buf[hfs_b1] > 0.0) << 1) |
+						((hfs_buf[hfs_b2] > 0.0) << 2) |
+						((hfs_buf[hfs_b3] > 0.0) << 3) |
+						((hfs_buf[hfs_b4] > 0.0) << 4);
+				}
 			}
-		}
 
-		/* Now update it and stay in HfS. */
-		hfs_buf[hfs_head] = current_value();
-		hfs_head = next(hfs_head, hfs_bufmax);
-		hfs_tail = next(hfs_tail, hfs_bufmax);
-		hfs_start = next(hfs_start, hfs_bufmax);
-		hfs_b0 = next(hfs_b0, hfs_bufmax);
-		hfs_b1 = next(hfs_b1, hfs_bufmax);
-		hfs_b2 = next(hfs_b2, hfs_bufmax);
-		hfs_b3 = next(hfs_b3, hfs_bufmax);
-		hfs_b4 = next(hfs_b4, hfs_bufmax);
-		hfs_stop1 = next(hfs_stop1, hfs_bufmax);
-		hfs_stop2 = next(hfs_stop2, hfs_bufmax);
+			/* Now update it and stay in HfS. */
+			hfs_buf[hfs_head] = current_value();
+			hfs_head = next(hfs_head, hfs_bufmax);
+			hfs_tail = next(hfs_tail, hfs_bufmax);
+			hfs_start = next(hfs_start, hfs_bufmax);
+			hfs_b0 = next(hfs_b0, hfs_bufmax);
+			hfs_b1 = next(hfs_b1, hfs_bufmax);
+			hfs_b2 = next(hfs_b2, hfs_bufmax);
+			hfs_b3 = next(hfs_b3, hfs_bufmax);
+			hfs_b4 = next(hfs_b4, hfs_bufmax);
+			hfs_stop1 = next(hfs_stop1, hfs_bufmax);
+			hfs_stop2 = next(hfs_stop2, hfs_bufmax);
+		} while (hfs_tail);
 		return -2;
 	}
 
@@ -279,20 +272,10 @@ get_rtty_ch(int state)
 	return ret;
 }
 
-void
-reset_rx(void)
-{
-	head = tail = 0;
-#ifdef RX_OVERRUNS
-	last_ro = -1;
-#endif
-}
-
 static void
 setup_audio(void)
 {
 	int i;
-	int dsp_buflen;
 
 	if (dsp != -1)
 		close(dsp);
@@ -308,14 +291,6 @@ setup_audio(void)
 		printf_errno("setting mono");
 	if (ioctl(dsp, SNDCTL_DSP_SPEED, &settings.dsp_rate) == -1)
 		printf_errno("setting sample rate");
-	dsp_buflen = (int)((double)settings.dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator)) + 1;
-	if (dsp_buf)
-		free(dsp_buf);
-	dsp_buf = malloc(sizeof(dsp_buf[0]) * dsp_buflen);
-	if (dsp_buf == NULL)
-		printf_errno("allocating dsp buffer");
-	head = tail = 0;
-	dsp_bufmax = dsp_buflen - 1;
 
 	generate_afsk_samples();
 	if (dsp_afsk != -1)
@@ -400,74 +375,23 @@ get_stop_bit(void)
 	return ret;
 }
 
-static void
+static int16_t
 read_audio(void)
 {
 	int ret;
 	int max;
-	int16_t tmpbuf[128];
+	int16_t tmpbuf[16];	// Max 16 channels.  Heh.
 	int16_t *tb = tmpbuf;
 	int i, j;
 	audio_errinfo errinfo;
 
 	/* Read into circular buffer */
 
-	if (avail(head, tail, dsp_bufmax) > (sizeof(tmpbuf) / sizeof(*tb) / dsp_channels)) {
-		ret = read(dsp, tmpbuf, sizeof(tmpbuf));
-		if (ret == -1)
-			printf_errno("reading audio input");
-		if (head >= tail) {
-			max = sizeof(tmpbuf) / sizeof(tmpbuf[0]) / dsp_channels;
-			if (max > ret / sizeof(*tb) / dsp_channels)
-				max = ret / sizeof(*tb) / dsp_channels;
-			i = (dsp_bufmax - head + 1) >= max ? max : (dsp_bufmax - head + 1);
-			if (dsp_channels == 1) {
-				memcpy(dsp_buf + head, tb, i * sizeof(dsp_buf[0]));
-				tb += i;
-			}
-			else {
-				for (j = 0; j < i; j++) {
-					memcpy(dsp_buf + head + j, tb, sizeof(*tb));
-					tb += dsp_channels;
-				}
-			}
-			ret -= i * sizeof(*tb) * dsp_channels;
-			head += i;
-			if (tail == head)
-				printf_errno("underrun %d == %d (%d)\n", tail, head, dsp_bufmax);
-			if (head > dsp_bufmax)
-				head -= dsp_bufmax;
-		}
-		if (head < tail) {
-			if (dsp_channels == 1) {
-				memcpy(dsp_buf + head, tb, ret);
-				head += ret / sizeof(*tb);
-				if (tail == head)
-					printf_errno("underrun %d == %d (%d)\n", tail, head, dsp_bufmax);
-			}
-			else {
-				for (j = 0; j < ret; ret += sizeof(*tb)) {
-					memcpy(dsp_buf + head, tb, sizeof(*tb));
-					tb += dsp_channels;
-					head++;
-					if (tail == head)
-						printf_errno("underrun %d == %d (%d)\n", tail, head, dsp_bufmax);
-				}
-			}
-		}
-		ret = ioctl(dsp, SNDCTL_DSP_GETERROR, &errinfo);
-		if (ret == -1)
-			printf_errno("reading audio errors");
-#ifdef RX_OVERRUNS
-		// TODO: Figure out how to get this back in.
-		if (last_ro != -1 && errinfo.rec_overruns)
-			printf_errno("rec_overrun (%d)", errinfo.rec_overruns);
-		last_ro = 0;
-#endif
-	}
+	ret = read(dsp, tmpbuf, sizeof(*tmpbuf) * dsp_channels);
+	if (ret == -1)
+		printf_errno("reading audio input");
 
-	if (tail == head)
-		printf_errno("underrun %d == %d (%d)\n", tail, head, dsp_bufmax);
+	return tmpbuf[0];
 }
 
 /*
@@ -477,26 +401,24 @@ read_audio(void)
 static double
 current_value(void)
 {
+	int16_t sample;
 	double mv, emv, sv, esv, cv, a;
 
-	read_audio();
+	sample = read_audio();
 
 #ifdef MATCHED_FILTERS
-	mv = fir_filter(dsp_buf[tail], mfilt);
-	sv = fir_filter(dsp_buf[tail], sfilt);
+	mv = fir_filter(sample, mfilt);
+	sv = fir_filter(sample, sfilt);
 #else
-	mv = bq_filter(dsp_buf[tail], mbpfilt);
-	sv = bq_filter(dsp_buf[tail], sbpfilt);
+	mv = bq_filter(sample, mbpfilt);
+	sv = bq_filter(sample, sbpfilt);
 #endif
 	emv = bq_filter(mv*mv, mlpfilt);
 	esv = bq_filter(sv*sv, slpfilt);
-	feed_waterfall(dsp_buf[tail]);
+	feed_waterfall(sample);
 	update_tuning_aid(mv, sv);
-	a = bq_filter((double)dsp_buf[tail] * dsp_buf[tail], afilt);
+	a = bq_filter((double)sample * sample, afilt);
 	audio_meter((int16_t)sqrt(a));
-	tail++;
-	if (tail > dsp_bufmax)
-		tail = 0;
 
 	cv = emv - esv;
 
@@ -669,20 +591,15 @@ bq_filter(double value, struct bq_filter *f)
 static double
 fir_filter(int16_t value, struct fir_filter *f)
 {
-	size_t i;
-	double res = 0;
+	size_t i, j;
+	float res = 0;
 
-	f->buf[f->head] = (double)value;
-	f->head = next(f->head, f->len - 1);
-	memcpy(f->tbuf, &f->buf[f->head], (f->len - f->head) * sizeof(f->tbuf[0]));
-	if (f->head)
-		memcpy(f->tbuf + (f->len - f->head), f->buf, f->head * sizeof(f->tbuf[0]));
+	memmove(f->buf, &f->buf[1], sizeof(f->buf[0]) * f->len - 1);
+	f->buf[f->len - 1] = (float)value;
 
+#pragma clang loop vectorize(enable)
 	for (i = 0; i < f->len; i++)
-		f->tbuf[i] *= f->coef[i];
-
-	for (i = 0; i < f->len; i++)
-		res += f->tbuf[i];
+		res += f->buf[i] * f->coef[i];
 
 	return res / f->len;
 }
@@ -697,7 +614,6 @@ create_matched_filter(double frequency)
 	ret = malloc(sizeof(*ret));
 	if (ret == NULL)
 		printf_errno("allocating FIR filter");
-	ret->head = 0;
 	/*
 	 * For the given sample rate, calculate the number of
 	 * samples in a complete wave
@@ -708,9 +624,6 @@ create_matched_filter(double frequency)
 	ret->buf = calloc(sizeof(*ret->buf) * ret->len, 1);
 	if (ret == NULL)
 		printf_errno("allocating FIR buffer");
-	ret->tbuf = malloc(sizeof(*ret->buf) * ret->len);
-	if (ret == NULL)
-		printf_errno("allocating FIR temp buffer");
 	ret->coef = malloc(sizeof(*ret->coef) * ret->len);
 	if (ret == NULL)
 		printf_errno("allocating FIR coef");
@@ -847,8 +760,6 @@ free_fir_filter(struct fir_filter *f)
 	if (f) {
 		if (f->buf)
 			free(f->buf);
-		if (f->tbuf)
-			free(f->tbuf);
 		if (f->coef)
 			free(f->coef);
 		free(f);

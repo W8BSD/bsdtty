@@ -10,7 +10,6 @@ enum afsk_bit {
 
 int get_rtty_ch(int state);
 void setup_rx(void);
-void reset_rx(void);
 void toggle_reverse(bool *rev);
 void send_afsk_char(char ch);
 void send_afsk_bit(enum afsk_bit bit);

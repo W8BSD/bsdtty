@@ -43,5 +43,6 @@ void send_string(const char *str);
 bool get_rig_ptt(void);
 bool set_rig_ptt(bool val);
 bool do_macro(int fkey);
+void get_rig_freq_mode(uint64_t *freq, char *buf, size_t sz);
 
 #endif

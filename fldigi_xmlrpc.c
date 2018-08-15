@@ -29,6 +29,7 @@
  * it for now.
  */
 
+#include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -53,6 +54,8 @@ static int *lsocks;
 static size_t nlsocks;
 static int *csocks;
 static size_t ncsocks;
+static fd_set rcsocks;
+static int mcsocks;
 static char *tx_buffer;
 static size_t tx_bufsz;
 static size_t tx_buflen;
@@ -70,11 +73,11 @@ static int add_char(char *pos, char ch, int done, char *end);
 static void add_tx(const char *str);
 static int b64_encode(char *target, size_t tlen, const char *source, size_t slen);
 static bool handle_request(int si);
-static void remove_sock(int *sarr, size_t *n, int si);
+static void remove_sock(int *sarr, size_t *n, fd_set *fds, int *max, int si);
 static void send_xmlrpc_fault(int sock);
 static void send_xmlrpc_response(int sock, char *type, char *value);
-static int sock_readbuf(int *sock, char **buf, size_t *bufsz, size_t *buflen, long len);
-static int sock_readln(int *sock, char *buf, size_t bufsz);
+static int xr_sock_readbuf(int *sock, char **buf, size_t *bufsz, size_t *buflen, long len);
+static int xr_sock_readln(int *sock, char *buf, size_t bufsz);
 
 void
 setup_xmlrpc(void)
@@ -94,6 +97,7 @@ setup_xmlrpc(void)
 	char hostname[256];
 	int opt;
 
+	FD_ZERO(&rcsocks);
 	if (settings.xmlrpc_host == NULL || settings.xmlrpc_host[0] == 0)
 		return;
 	if (settings.xmlrpc_port == 0)
@@ -110,6 +114,9 @@ setup_xmlrpc(void)
 		for (;;) {
 			if ((ret = bind(sock, aip->ai_addr, aip->ai_addrlen)) == 0) {
 				if ((ret = listen(sock, 8)) == 0) {
+					opt = 1;
+					if (ioctl(sock, FIONBIO, &opt) == -1)
+						printf_errno("setting socket nonblocking");
 					nlsocks++;
 					tmp = realloc(lsocks, sizeof(*lsocks) * nlsocks);
 					if (tmp == NULL)
@@ -151,7 +158,6 @@ handle_xmlrpc(void)
 {
 	fd_set rfds;
 	int i;
-	int msock;
 	struct timeval tv = {
 		.tv_sec = 0,
 		.tv_usec = 0
@@ -163,49 +169,33 @@ handle_xmlrpc(void)
 	int opt;
 
 	/* First, service listening sockets */
-	if (nlsocks > 0) {
-		msock = -1;
-		FD_ZERO(&rfds);
-		for (i = 0; i < nlsocks; i++) {
-			if (lsocks[i] > msock)
-				msock = lsocks[i];
-			FD_SET(lsocks[i], &rfds);
-		}
-		if (select(msock + 1, &rfds, NULL, NULL, &tv) > 0) {
-			for (i = 0; i < nlsocks; i++) {
-				if (FD_ISSET(lsocks[i], &rfds)) {
-					sock = accept(lsocks[i], &sa, &salen);
-					if (sock != -1) {
-						ncsocks++;
-						tmp = realloc(csocks, sizeof(*csocks) * ncsocks);
-						if (tmp == NULL)
-							close(sock);
-						else {
-							csocks = tmp;
-							csocks[ncsocks - 1] = sock;
-							opt = 1;
-							setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
-						}
-					}
-				}
+	for (i = 0; i < nlsocks; i++) {
+		sock = accept(lsocks[i], &sa, &salen);
+		if (sock != -1) {
+			ncsocks++;
+			tmp = realloc(csocks, sizeof(*csocks) * ncsocks);
+			if (tmp == NULL)
+				close(sock);
+			else {
+				csocks = tmp;
+				csocks[ncsocks - 1] = sock;
+				if (sock > mcsocks)
+					mcsocks = sock;
+				FD_SET(sock, &rcsocks);
+				opt = 1;
+				setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
 			}
 		}
 	}
 
 	/* Now service connected sockets */
 	if (ncsocks > 0) {
-		msock = -1;
-		FD_ZERO(&rfds);
-		for (i = 0; i < ncsocks; i++) {
-			if (csocks[i] > msock)
-				msock = csocks[i];
-			FD_SET(csocks[i], &rfds);
-		}
-		if (select(msock + 1, &rfds, NULL, NULL, &tv) > 0) {
+		rfds = rcsocks;
+		if (select(mcsocks + 1, &rfds, NULL, NULL, &tv) > 0) {
 			for (i = 0; i < ncsocks; i++) {
 				if (FD_ISSET(csocks[i], &rfds)) {
 					if (!handle_request(i)) {
-						remove_sock(csocks, &ncsocks, i);
+						remove_sock(csocks, &ncsocks, &rcsocks, &mcsocks, i);
 						i--;
 					}
 				}
@@ -233,7 +223,7 @@ handle_request(int si)
 
 	for (bytes = 0; content_len == -1 || bytes < content_len;) {
 		if (headers) {
-			if ((ret = sock_readln(&csocks[si], buf, sizeof(buf))) < 0 || csocks[si] == -1)
+			if ((ret = xr_sock_readln(&csocks[si], buf, sizeof(buf))) < 0 || csocks[si] == -1)
 				break;
 			if (buf[0] == 0) {
 				headers = false;
@@ -252,7 +242,7 @@ handle_request(int si)
 			}
 		}
 		else {
-			if ((ret = sock_readbuf(&csocks[si], &req_buffer, &req_bufsz, &req_buflen, content_len)) == -1)
+			if ((ret = xr_sock_readbuf(&csocks[si], &req_buffer, &req_bufsz, &req_buflen, content_len)) == -1)
 				break;
 			bytes += ret;
 			c = strstr(req_buffer, "<methodName>");
@@ -599,7 +589,7 @@ handle_request(int si)
 }
 
 static int
-sock_readln(int *sock, char *buf, size_t bufsz)
+xr_sock_readln(int *sock, char *buf, size_t bufsz)
 {
 	fd_set rd;
 	int i;
@@ -612,6 +602,7 @@ sock_readln(int *sock, char *buf, size_t bufsz)
 		FD_SET(*sock, &rd);
 		tv.tv_sec = 0;
 		tv.tv_usec = 100000;
+
 		switch(select(*sock+1, &rd, NULL, NULL, &tv)) {
 			case -1:
 				close(*sock);
@@ -649,7 +640,7 @@ done:
 }
 
 static int
-sock_readbuf(int *sock, char **buf, size_t *bufsz, size_t *buflen, long len)
+xr_sock_readbuf(int *sock, char **buf, size_t *bufsz, size_t *buflen, long len)
 {
 	fd_set rd;
 	int i;
@@ -674,6 +665,7 @@ sock_readbuf(int *sock, char **buf, size_t *bufsz, size_t *buflen, long len)
 		FD_SET(*sock, &rd);
 		tv.tv_sec = 0;
 		tv.tv_usec = 100000;
+
 		switch(select(*sock+1, &rd, NULL, NULL, &tv)) {
 			case -1:
 				if (errno == EINTR)
@@ -705,10 +697,24 @@ done:
 }
 
 static void
-remove_sock(int *sarr, size_t *n, int si)
+remove_sock(int *sarr, size_t *n, fd_set *fds, int *max, int si)
 {
-	if (sarr[si] != -1)
+	int i;
+
+	if (max && *max == sarr[si]) {
+		*max = 0;
+		for (i = 0; i < *n; i++) {
+			if (i == si)
+				continue;
+			if (sarr[si] > *max)
+				*max = sarr[si];
+		}
+	}
+	if (sarr[si] != -1) {
+		if (fds)
+			FD_CLR(sarr[si], fds);
 		close(sarr[si]);
+	}
 	if (si != *n - 1) {
 		memmove(&sarr[si], &sarr[si + 1],
 		    sizeof(*sarr) * (*n - si - 1));
@@ -722,14 +728,6 @@ send_xmlrpc_response(int sock, char *type, char *value)
 	char *buf;
 
 	asprintf(&buf, "HTTP/1.1 200 OK\r\nConnection: Keep-Alive\r\nContent-Type: text/xml\r\nContent-Length: %lu\r\n\r\n<?xml version=\"1.0\"?>\n<methodResponse><params><param><value><%s%s%s%s%s%s</value></param></params></methodResponse>", 61+(type == NULL ? 5 : ((strlen(type) * 2) + strlen(value) + 4)) + 42, type == NULL ? "nil/>" : type, type == NULL ? "" : ">", value == NULL ? "" : value, type == NULL ? "" : "</", type == NULL ? "" : type, type == NULL ? "" : ">");
-#if 0
-	if (type == NULL)
-		strcat(buf, "nil/>");
-	else {
-		sprintf(strchr(buf, 0), "%s>%s</%s>", type, value, type);
-	}
-	strcat(buf, "</value></param></params></methodResponse>");
-#endif
 	send(sock, buf, strlen(buf), 0);
 	free(buf);
 }
@@ -932,9 +930,9 @@ close_sockets(void)
 {
 	/* First, close listening sockets */
 	while (nlsocks)
-		remove_sock(lsocks, &nlsocks, 0);
+		remove_sock(lsocks, &nlsocks, NULL, NULL, 0);
 
 	/* Now close connected sockets */
 	while (ncsocks)
-		remove_sock(csocks, &ncsocks, 0);
+		remove_sock(csocks, &ncsocks, &rcsocks, &mcsocks, 0);
 }

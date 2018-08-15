@@ -469,7 +469,6 @@ input_loop(void)
 		if (get_rig_ptt()) {	// TX Mode
 			if (!do_tx(&rxstate))
 				return;
-			reset_rx();
 			rxstate = -1;
 		}
 		else {
@@ -697,8 +696,9 @@ send_char(const char ch)
 			}
 		}
 		if (rts) {
-			freq = get_rig_freq() + settings.freq_offset;
-			get_rig_mode(mode, sizeof(mode));
+			get_rig_freq_mode(&freq, mode, sizeof(mode));
+			if (freq)
+				freq += settings.freq_offset;
 		}
 		now = time(NULL);
 		if (log_file != NULL) {
@@ -1012,35 +1012,61 @@ sock_readln(int sock, char *buf, size_t bufsz)
 	fd_set rd;
 	int i;
 	int ret;
-	struct timeval tv = {
-		.tv_sec = 0,
-		.tv_usec = 500000
-	};
 
 	for (i = 0; i < bufsz - 1; i++) {
-		FD_ZERO(&rd);
-		FD_SET(sock, &rd);
-		switch(select(sock+1, &rd, NULL, NULL, &tv)) {
-			case -1:
-				if (errno == EINTR)
-					continue;
-				return -1;
-			case 0:
-				return -1;
-			case 1:
-				ret = recv(sock, buf + i, 1, MSG_WAITALL);
-				if (ret == -1)
-					return -1;
-				if (buf[i] == '\n')
-					goto done;
-				break;
-		}
+		ret = recv(sock, buf + i, 1, MSG_WAITALL);
+		if (ret == -1)
+			return -1;
+		if (buf[i] == '\n')
+			goto done;
 	}
 done:
 	buf[i] = 0;
 	while (i > 0 && buf[i-1] == '\n')
 		buf[--i] = 0;
 	return i;
+}
+
+void
+get_rig_freq_mode(uint64_t *freq, char *mbuf, size_t sz)
+{
+	uint64_t ret;
+	char buf[1024];
+	char tbuf[1024];
+
+	if (rigctld_socket != -1) {
+		if (send(rigctld_socket, "fm\n", 3, 0) != 3)
+			goto next;
+		if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0) {
+			close(rigctld_socket);
+			rigctld_socket = -1;
+			if (settings.ctl_ptt)
+				printf_errno("lost connection getting rig frequency");
+			goto next;
+		}
+		if (sock_readln(rigctld_socket, mbuf, sz) <= 0) {
+			close(rigctld_socket);
+			rigctld_socket = -1;
+			if (settings.ctl_ptt)
+				printf_errno("lost connection getting rig mode");
+			goto next;
+		}
+		if (sock_readln(rigctld_socket, tbuf, sz) <= 0) {
+			close(rigctld_socket);
+			rigctld_socket = -1;
+			if (settings.ctl_ptt)
+				printf_errno("lost connection getting rig bandwidth");
+			goto next;
+		}
+		if (sscanf(buf, "%" SCNu64, freq) != 1)
+			goto next;
+		return;
+	}
+next:
+
+	*freq = 0;
+	mbuf[0] = 0;
+	return;
 }
 
 uint64_t
