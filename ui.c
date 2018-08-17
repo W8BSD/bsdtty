@@ -1442,7 +1442,7 @@ done:
 void
 update_captured_call(const char *call)
 {
-	char captured[15];
+	char captured[16];
 
 	if (call == NULL)
 		return;
