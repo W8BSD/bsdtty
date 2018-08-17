@@ -24,6 +24,8 @@
  *
  */
 
+#define NOISE_CORRECT
+
 #include <sys/soundcard.h>
 #include <sys/types.h>
 
@@ -66,6 +68,13 @@ static struct bq_filter *slpfilt;
 static struct bq_filter *mapfilt;
 // Space phase filter
 static struct bq_filter *sapfilt;
+#ifdef NOISE_CORRECT
+// Mark/Space noise level
+static float mnoise;
+static float snoise;
+static float mnsamp;
+static float snsamp;
+#endif
 // Audio meter filter
 static struct bq_filter *afilt;
 // Hunt for Start
@@ -188,8 +197,12 @@ get_rtty_ch(int state)
 		 * synchronization.
 		 */
 		hfs_tail = 0;
-		for (hfs_head = 0; hfs_head <= hfs_bufmax; hfs_head++)
+		for (hfs_head = 0; hfs_head <= hfs_bufmax; hfs_head++) {
+#ifdef NOISE_CORRECT
+			mnoise = snoise = 0.0;	// No noise if no signal...
+#endif
 			hfs_buf[hfs_head] = current_value();
+		}
 		hfs_head = hfs_bufmax;
 		hfs_start = ((1/phase_rate)*.5);
 		hfs_b0 = ((1/phase_rate)*1.5);
@@ -213,6 +226,10 @@ get_rtty_ch(int state)
 				    hfs_buf[hfs_stop1] >= 0.0 &&
 				    hfs_buf[hfs_stop2] >= 0.0) {
 					phase = phase_rate;
+					/*
+					 * With NOISE_CORRECT, it would be nice to have initial
+					 * noise levels here for the second character.
+					 */
 					return (hfs_buf[hfs_b0] > 0.0) |
 						((hfs_buf[hfs_b1] > 0.0) << 1) |
 						((hfs_buf[hfs_b2] > 0.0) << 2) |
@@ -223,6 +240,9 @@ get_rtty_ch(int state)
 
 			/* Now update it and stay in HfS. */
 			hfs_buf[hfs_head] = current_value();
+#ifdef NOISE_CORRECT
+			mnoise = snoise = 0.0;	// No noise if no signal...
+#endif
 			hfs_head = next(hfs_head, hfs_bufmax);
 			hfs_tail = next(hfs_tail, hfs_bufmax);
 			hfs_start = next(hfs_start, hfs_bufmax);
@@ -320,6 +340,10 @@ get_bit(void)
 		cv = current_value();
 		if (phase > 0.5 && nsamp == 0) {
 			tot = cv;
+#ifdef NOISE_CORRECT
+			mnoise = mnsamp;
+			snoise = snsamp;
+#endif
 			nsamp++;
 		}
 		/* Sampling is over, look for jitter */
@@ -354,7 +378,15 @@ get_stop_bit(void)
 			ret = cv >= 0.0;
 			nsamp++;
 		}
+#ifdef NOISE_CORRECT
+		else if (phase > 0.75 && nsamp == 1) {
+			mnoise = mnsamp;
+			nsamp++;
+		}
+		else if (phase > 1 && nsamp == 2) {
+#else
 		else if (phase > 1 && nsamp == 1) {
+#endif
 			if (cv < 0.0)
 				ret = false;
 			nsamp++;
@@ -400,6 +432,10 @@ current_value(void)
 	sv = fir_filter(sample, sfilt);
 	emv = bq_filter(mv*mv, mlpfilt);
 	esv = bq_filter(sv*sv, slpfilt);
+#ifdef NOISE_CORRECT
+	emv -= mnoise;
+	esv -= snoise;
+#endif
 	feed_waterfall(sample);
 	update_tuning_aid(mv, sv);
 	a = bq_filter((double)sample * sample, afilt);
@@ -414,6 +450,12 @@ current_value(void)
 	 * only guaranteed a mark and a space for each character... and
 	 * extended mark for idle is entirely possible.
 	 */
+#ifdef NOISE_CORRECT
+	if (emv > esv)
+		mnsamp = emv;
+	else
+		snsamp = esv;
+#endif
 	cv = emv - esv;
 
 	/* Return the current value */
