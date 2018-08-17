@@ -24,8 +24,6 @@
  *
  */
 
-#define MATCHED_FILTERS
-
 #include <sys/soundcard.h>
 #include <sys/types.h>
 
@@ -59,18 +57,10 @@ struct bq_filter {
 static double phase_rate;
 static double phase = 0.0;
 // Mark filter
-#ifdef MATCHED_FILTERS
 static struct fir_filter *mfilt;
-#else
-static struct bq_filter *mfilt;
-#endif
 static struct bq_filter *mlpfilt;
 // Space filter
-#ifdef MATCHED_FILTERS
 static struct fir_filter *sfilt;
-#else
-static struct bq_filter *sfilt;
-#endif
 static struct bq_filter *slpfilt;
 // Mark phase filter
 static struct bq_filter *mapfilt;
@@ -406,13 +396,8 @@ current_value(void)
 
 	sample = read_audio();
 
-#ifdef MATCHED_FILTERS
 	mv = fir_filter(sample, mfilt);
 	sv = fir_filter(sample, sfilt);
-#else
-	mv = bq_filter(sample, mbpfilt);
-	sv = bq_filter(sample, sbpfilt);
-#endif
 	emv = bq_filter(mv*mv, mlpfilt);
 	esv = bq_filter(sv*sv, slpfilt);
 	feed_waterfall(sample);
@@ -439,17 +424,10 @@ current_value(void)
 static void
 create_filters(void)
 {
-#ifndef MATCHED_FILTERS
-	free_bq_filter(mfilt);
-	free_bq_filter(sfilt);
-	mfilt = calc_bpf_coef(settings.mark_freq, settings.bp_filter_q);
-	sfilt = calc_bpf_coef(settings.space_freq, settings.bp_filter_q);
-#else
 	free_fir_filter(mfilt);
 	free_fir_filter(sfilt);
 	mfilt = create_matched_filter(settings.mark_freq);
 	sfilt = create_matched_filter(settings.space_freq);
-#endif
 
 	/*
 	 * TODO: Do we need to get the envelopes separately, or just
