@@ -163,7 +163,7 @@ handle_xmlrpc(void)
 		.tv_usec = 0
 	};
 	struct sockaddr sa;
-	socklen_t salen;
+	socklen_t salen = sizeof(sa);
 	int sock;
 	int *tmp;
 	int opt;
