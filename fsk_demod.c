@@ -420,6 +420,15 @@ current_value(void)
 	a = bq_filter((double)sample * sample, afilt);
 	audio_meter((int16_t)sqrt(a));
 
+	/*
+	 * TODO: A variable decision threshold may help out... essentially,
+	 * instead of taking zero as the crossing point, take the
+	 * envelope of both the mark and space signals as the extents,
+	 * and set the zero point at the average.  The only question is
+	 * how fast to have the envelopes respond to change since we're
+	 * only guaranteed a mark and a space for each character... and
+	 * extended mark for idle is entirely possible.
+	 */
 	cv = emv - esv;
 
 	/* Return the current value */
@@ -594,7 +603,7 @@ fir_filter(int16_t value, struct fir_filter *f)
 	size_t i, j;
 	float res = 0;
 
-	memmove(f->buf, &f->buf[1], sizeof(f->buf[0]) * f->len - 1);
+	memmove(f->buf, &f->buf[1], sizeof(f->buf[0]) * (f->len - 1));
 	f->buf[f->len - 1] = (float)value;
 
 #pragma clang loop vectorize(enable)
@@ -621,7 +630,7 @@ create_matched_filter(double frequency)
 	ret->len = settings.dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator) / 2;
 	wavelen = settings.dsp_rate / frequency;
 
-	ret->buf = calloc(sizeof(*ret->buf) * ret->len, 1);
+	ret->buf = calloc(sizeof(*ret->buf), ret->len);
 	if (ret == NULL)
 		printf_errno("allocating FIR buffer");
 	ret->coef = malloc(sizeof(*ret->coef) * ret->len);
