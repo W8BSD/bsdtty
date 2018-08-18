@@ -1445,8 +1445,9 @@ update_captured_call(const char *call)
 	char captured[16];
 
 	if (call == NULL)
-		return;
-	sprintf(captured, "%-15s", call);
+		captured[0] = 0;
+	else
+		sprintf(captured, "%-15s", call);
 	mvwaddstr(status, 0, 35, captured);
 	wrefresh(status);
 }
