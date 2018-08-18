@@ -904,8 +904,10 @@ send_rtty_char(char ch)
 void
 captured_callsign(const char *str)
 {
-	if (their_callsign)
+	if (their_callsign) {
 		free(their_callsign);
+		their_callsign = NULL;
+	}
 	if (str == NULL || str[0] == 0)
 		return;
 	their_callsign = strdup(str);
