@@ -31,6 +31,7 @@
 
 #include <assert.h>
 #include <curses.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <math.h>
@@ -409,9 +410,15 @@ read_audio(void)
 
 	/* Read into circular buffer */
 
-	ret = read(dsp, tmpbuf, sizeof(*tmpbuf) * dsp_channels);
-	if (ret == -1)
-		printf_errno("reading audio input");
+	for (;;) {
+		ret = read(dsp, tmpbuf, sizeof(*tmpbuf) * dsp_channels);
+		if (ret == -1) {
+			if (errno != EINTR)
+				printf_errno("reading audio input");
+		}
+		else
+			break;
+	}
 
 	return tmpbuf[0];
 }
