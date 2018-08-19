@@ -1430,11 +1430,11 @@ capture_call(int y, int x)
 		else
 			break;
 	}
+done:
 	*c = 0;
 	update_captured_call(captured);
 	captured_callsign(captured);
 
-done:
 	wmove(rx, iy, ix);
 	wrefresh(rx);
 }
