@@ -24,7 +24,7 @@
  *
  */
 
-#define NOISE_CORRECT
+//#define NOISE_CORRECT
 
 #include <sys/soundcard.h>
 #include <sys/types.h>
