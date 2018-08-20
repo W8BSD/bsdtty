@@ -47,6 +47,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "afsk_send.h"
 #include "bsdtty.h"
 #include "fldigi_xmlrpc.h"
 #include "fsk_demod.h"
@@ -282,6 +283,10 @@ int main(int argc, char **argv)
 
 	// Set up the FSK stuff.
 	setup_rx();
+
+	// And AFSK
+	if (settings.afsk)
+		setup_afsk_audio();
 
 	// Set up the log file
 	setup_log();
@@ -582,6 +587,7 @@ do_tx(int *rxstate)
 			break;
 		case '`':
 			toggle_reverse(&reverse);
+			afsk_toggle_reverse();
 			*rxstate = -1;
 			break;
 		case '[':
@@ -1020,7 +1026,6 @@ format_freq(uint64_t freq)
 static int
 sock_readln(int sock, char *buf, size_t bufsz)
 {
-	fd_set rd;
 	int i;
 	int ret;
 
@@ -1041,7 +1046,6 @@ done:
 void
 get_rig_freq_mode(uint64_t *freq, char *mbuf, size_t sz)
 {
-	uint64_t ret;
 	char buf[1024];
 	char tbuf[1024];
 

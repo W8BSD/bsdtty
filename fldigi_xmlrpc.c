@@ -46,6 +46,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "afsk_send.h"
 #include "bsdtty.h"
 #include "fsk_demod.h"
 #include "ui.h"
@@ -382,12 +383,15 @@ handle_request(int si)
 	}
 	else if (strcmp(cmd, "modem.set_reverse") == 0) {
 		sprintf(buf, "%d", reverse);
-		if (atoi(req_buffer) != reverse)
+		if (atoi(req_buffer) != reverse) {
 			toggle_reverse(&reverse);
+			afsk_toggle_reverse();
+		}
 		send_xmlrpc_response(csocks[si], "boolean", buf);
 	}
 	else if (strcmp(cmd, "modem.toggle_reverse") == 0) {
 		toggle_reverse(&reverse);
+		afsk_toggle_reverse();
 		sprintf(buf, "%d", reverse);
 		send_xmlrpc_response(csocks[si], "boolean", buf);
 	}
