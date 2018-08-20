@@ -73,3 +73,4 @@ Outstanding issues:
 * I should idle with LTRS, not a mark signal... super tricky.
 * Add CQRLOG integration.
 * Deal with explicit LFs in macros... CR is expanded to CRLF
+* Emergency abort key... no way to stop a transmission right now.
