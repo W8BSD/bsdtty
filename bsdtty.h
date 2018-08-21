@@ -36,7 +36,6 @@ int strtoi(const char *, char **endptr, int base);
 void captured_callsign(const char *str);
 const char *format_freq(uint64_t freq);
 void reinit(void);
-void fix_config(void);
 uint64_t get_rig_freq(void);
 const char *get_rig_mode(char *buf, size_t sz);
 void send_string(const char *str);

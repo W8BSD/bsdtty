@@ -60,6 +60,7 @@ static void setup_log(void);
 static void setup_tty(void);
 noreturn static void usage(const char *cmd);
 static void setup_defaults(void);
+static void fix_config(void);
 
 struct bt_settings settings = {
 	.baud_numerator = 1000,
@@ -811,7 +812,7 @@ captured_callsign(const char *str)
 	their_callsign = strdup(str);
 }
 
-void
+static void
 fix_config(void)
 {
 	if (settings.dsp_name == NULL)
@@ -837,4 +838,3 @@ fix_config(void)
 	if (settings.rigctld_host == NULL || settings.rigctld_host[0] == 0 || settings.rigctld_port == 0)
 		settings.ctl_ptt = false;
 }
-
