@@ -41,6 +41,7 @@
 #include <unistd.h>
 #include <time.h>
 
+#include "baudot.h"
 #include "bsdtty.h"
 #include "fsk_demod.h"
 #include "ui.h"

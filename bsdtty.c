@@ -48,6 +48,7 @@
 #include <unistd.h>
 
 #include "afsk_send.h"
+#include "baudot.h"
 #include "bsdtty.h"
 #include "fldigi_xmlrpc.h"
 #include "fsk_demod.h"
@@ -104,60 +105,6 @@ static bool send_end_space = true;
 char *their_callsign;
 unsigned serial;
 
-struct charset {
-	const char *chars;
-	const char *name;
-};
-
-static struct charset charsets[] = {
-	{
-		// From http://baudot.net/docs/smith--teletype-codes.pdf
-		.name = "ITA2",
-		.chars = "\x00" "E\nA SIU"
-		  "\rDRJNFCK"
-		  "TZLWHYPQ"
-		  "OBG\x0e" "MXV\x0f"
-		  "\x00" "3\n- '87"
-		  "\r#4\x07" ",@:("
-		  "5+)2$601"
-		  "9?*\x0e" "./=\x0f"
-	},
-	{
-		// From http://baudot.net/docs/smith--teletype-codes.pdf
-		.name = "USTTY",
-		.chars = "\x00" "E\nA SIU"
-		  "\rDRJNFCK"
-		  "TZLWHYPQ"
-		  "OBG\x0e" "MXV\x0f"
-		  "\x00" "3\n- \x07" "87"
-		  "\r$4',!:("
-		  "5\")2#601"
-		  "9?&\x0e" "./;\x0f"
-	},
-	{
-		// From ITU-T S.1 (official standard)
-		/*
-		 * WRU signal (who are you?) FIGS D is to operate answerback...
-		 * It is therefore encoded as ENQ. (4.1)
-		 * 
-		 * FIGS F, G, and H are explicitly NOT DEFINED. 
-		 * "arbitrary sign" such as a square to indicate an
-		 * abnormal impression should occur. (4.2)
-		 * 
-		 * See U.11, U.20, U.22 and S.4 for NUL uses
-		 */
-		.name = "ITA2(S)",
-		.chars = "\x00" "E\nA SIU"
-		  "\rDRJNFCK"
-		  "TZLWHYPQ"
-		  "OBG\x0e" "MXV\x0f"
-		  "\x00" "3\n- '87"
-		  "\r\x05" "4\x07" ",\x00" ":("
-		  "5+)2\x00" "601"
-		  "9?\x00" "\x0e" "./=\x0f"
-	  },
-};
-
 int main(int argc, char **argv)
 {
 	char *c;
@@ -188,7 +135,7 @@ int main(int argc, char **argv)
 				break;
 			case 'c':
 				settings.charset = strtoi(optarg, NULL, 10);
-				if (settings.charset < 0 || settings.charset >= sizeof(charsets) / sizeof(charsets[0]))
+				if (settings.charset < 0 || settings.charset >= charset_count)
 					settings.charset = 0;
 				break;
 			case 'C':
@@ -291,7 +238,7 @@ int main(int argc, char **argv)
 	// Set up the log file
 	setup_log();
 
-	display_charset(charsets[settings.charset].name);
+	display_charset(charset_name(settings.charset));
 	update_squelch(sync_squelch);
 	update_serial(serial);
 
@@ -312,6 +259,7 @@ reinit(void)
 
 	// Set up the FSK stuff.
 	setup_rx();
+	setup_afsk_audio();
 
 	// Set up the log file
 	setup_log();
@@ -421,29 +369,6 @@ setup_tty(void)
 	ioctl(tty, TIOCSFBAUD, &bf);
 	ioctl(tty, TIOCGFBAUD, &bf);
 #endif
-}
-
-char
-asc2baudot(int asc, bool figs)
-{
-	char *ch = NULL;
-
-	asc = toupper(asc);
-	if (figs)
-		ch = memchr(charsets[settings.charset].chars + 0x20, asc, 0x20);
-	if (ch == NULL)
-		ch = memchr(charsets[settings.charset].chars, asc, 0x40);
-	if (ch == NULL)
-		return 0;
-	return ch - charsets[settings.charset].chars;
-}
-
-char
-baudot2asc(int baudot, bool figs)
-{
-	if (baudot < 0 || baudot > 0x1f)
-		return 0;
-	return charsets[settings.charset].chars[baudot + figs * 0x20];
 }
 
 static void
@@ -579,7 +504,7 @@ do_tx(int *rxstate)
 			update_serial(serial);
 			break;
 		case RTTY_KEY_REFRESH:
-			display_charset(charsets[settings.charset].name);
+			display_charset(charset_name(settings.charset));
 			update_squelch(sync_squelch);
 			show_reverse(reverse);
 			update_captured_call(their_callsign);
@@ -593,14 +518,14 @@ do_tx(int *rxstate)
 		case '[':
 			settings.charset--;
 			if (settings.charset < 0)
-				settings.charset = sizeof(charsets) / sizeof(charsets[0]) - 1;
-			display_charset(charsets[settings.charset].name);
+				settings.charset = charset_count - 1;
+			display_charset(charset_name(settings.charset));
 			break;
 		case ']':
 			settings.charset++;
-			if (settings.charset == sizeof(charsets) / sizeof(charsets[0]))
+			if (settings.charset == charset_count)
 				settings.charset = 0;
-			display_charset(charsets[settings.charset].name);
+			display_charset(charset_name(settings.charset));
 			break;
 		case '\\':
 			reset_tuning_aid();
@@ -981,7 +906,7 @@ fix_config(void)
 		settings.baud_numerator = 1;
 	if (settings.charset < 0)
 		settings.charset = 0;
-	if (settings.charset > sizeof(charsets) / sizeof(charsets[0]))
+	if (settings.charset >= charset_count)
 		settings.charset = 0;
 	if (settings.rigctld_host == NULL || settings.rigctld_host[0] == 0 || settings.rigctld_port == 0)
 		settings.ctl_ptt = false;
