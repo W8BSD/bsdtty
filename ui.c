@@ -146,6 +146,8 @@ update_tuning_aid(double mark, double space)
 	static int nsamp = -1;
 	static double maxm = 0;
 	static double maxs = 0;
+	static double cmaxm = 0;
+	static double cmaxs = 0;
 	double mmult, smult;
 	int madd, sadd;
 	int phaseadj = 0;
@@ -166,7 +168,7 @@ update_tuning_aid(double mark, double space)
 			free(buf);
 			buf = NULL;
 		}
-		maxm = maxs = reset_tuning = 0;
+		maxm = maxs = cmaxm = cmaxs = reset_tuning = 0;
 		wsamp = 0;
 	}
 
@@ -192,9 +194,24 @@ update_tuning_aid(double mark, double space)
 		maxm = fabs(mark);
 	if (fabs(space) > maxs)
 		maxs = fabs(space);
+	if (fabs(mark) > cmaxm)
+		cmaxm = fabs(mark);
+	if (fabs(space) > cmaxs)
+		cmaxs = fabs(space);
 	wsamp++;
 
 	if (wsamp - phaseadj == nsamp) {
+		/*
+		 * Scale back maxm so noise is at 33% of space
+		 * We want it to take one second to reach the new max
+		 * value.
+		 */
+		if (cmaxm < maxm / 3 && cmaxs < maxs / 3) {
+//fprintf(stderr, "Scaling by %0.2f (1 - (%d / %d)\n", 1 - ((double)settings.dsp_rate / nsamp), settings.dsp_rate, nsamp);
+			maxm *= 1 - ((double)nsamp / settings.dsp_rate);
+			maxs *= 1 - ((double)nsamp / settings.dsp_rate);
+		}
+		cmaxm = cmaxs = 0;
 		mmult = maxm / (tx_width / 2 - 2);
 		smult = maxs / (tx_height / 2 - 2);
 		madd = tx_width / 2;
