@@ -736,10 +736,32 @@ strtoi(const char *nptr, char **endptr, int base)
 				break;
 		}
 	}
-	if (l < INT_MIN)
+	if (l < INT_MIN) {
 		ret = INT_MIN;
-	if (l > INT_MAX)
+		errno = ERANGE;
+	}
+	if (l > INT_MAX) {
 		ret = INT_MAX;
+		errno = ERANGE;
+	}
+
+	return ret;
+}
+
+unsigned int
+strtoui(const char *nptr, char **endptr, int base)
+{
+	unsigned int ret;
+	unsigned long l;
+
+	l = strtoul(nptr, endptr, base);
+	ret = (unsigned int)l;
+	if (errno == ERANGE && l == ULONG_MAX)
+		ret = UINT_MAX;
+	if (l > UINT_MAX) {
+		ret = UINT_MAX;
+		errno = ERANGE;
+	}
 
 	return ret;
 }

@@ -33,6 +33,7 @@ extern char *their_callsign;
 extern unsigned serial;
 
 int strtoi(const char *, char **endptr, int base);
+unsigned int strtoui(const char *nptr, char **endptr, int base);
 void captured_callsign(const char *str);
 const char *format_freq(uint64_t freq);
 void reinit(void);
