@@ -39,6 +39,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <netdb.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -68,16 +69,15 @@ static const char * base64alphabet =
  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
 static char *req_buffer;
 static size_t req_bufsz;
-static size_t req_buflen;
 
 static int add_char(char *pos, char ch, int done, char *end);
 static void add_tx(const char *str);
 static int b64_encode(char *target, size_t tlen, const char *source, size_t slen);
 static bool handle_request(int si);
-static void remove_sock(int *sarr, size_t *n, fd_set *fds, int *max, int si);
+static void remove_sock(int *sarr, size_t *n, fd_set *fds, int *max, size_t si);
 static void send_xmlrpc_fault(int sock);
 static void send_xmlrpc_response(int sock, char *type, char *value);
-static int xr_sock_readbuf(int *sock, char **buf, size_t *bufsz, size_t *buflen, long len);
+static int xr_sock_readbuf(int *sock, char **buf, size_t *bufsz, unsigned long len);
 static int xr_sock_readln(int *sock, char *buf, size_t bufsz);
 
 void
@@ -158,7 +158,7 @@ void
 handle_xmlrpc(void)
 {
 	fd_set rfds;
-	int i;
+	size_t i;
 	struct timeval tv = {
 		.tv_sec = 0,
 		.tv_usec = 0
@@ -214,15 +214,16 @@ handle_request(int si)
 	char buf[1024];
 	char cmd[128] = "";
 	bool headers = true;
-	long content_len = -1;
-	long start = 0;
-	long len = 0;
+	unsigned long content_len = ULONG_MAX;
+	unsigned long start = 0;
+	unsigned long len = 0;
 	char *c;
 	char *p;
 	int ret;
+	unsigned int uret;
 	size_t bytes;
 
-	for (bytes = 0; content_len == -1 || bytes < content_len;) {
+	for (bytes = 0; bytes < content_len;) {
 		if (headers) {
 			if ((ret = xr_sock_readln(&csocks[si], buf, sizeof(buf))) < 0 || csocks[si] == -1)
 				break;
@@ -237,13 +238,14 @@ handle_request(int si)
 				c++;
 				while (isspace(*c))
 					c++;
-				content_len = strtol(c, NULL, 10);
-				if (content_len == 0)
-					content_len = -1;
+				errno = 0;
+				content_len = strtoul(c, NULL, 10);
+				if (content_len == 0 && errno == ERANGE)
+					content_len = ULONG_MAX;
 			}
 		}
 		else {
-			if ((ret = xr_sock_readbuf(&csocks[si], &req_buffer, &req_bufsz, &req_buflen, content_len)) == -1)
+			if ((ret = xr_sock_readbuf(&csocks[si], &req_buffer, &req_bufsz, content_len)) == -1)
 				break;
 			bytes += ret;
 			c = strstr(req_buffer, "<methodName>");
@@ -315,8 +317,8 @@ handle_request(int si)
 		send_xmlrpc_response(csocks[si], "int", buf);
 	}
 	else if (strcmp(cmd, "text.get_rx") == 0) {
-		start = strtol(req_buffer, &c, 10);
-		len = strtol(c + 1, NULL, 10);
+		start = strtoul(req_buffer, &c, 10);
+		len = strtoul(c + 1, NULL, 10);
 		/*
 		 * TODO: TLF uses start:end, not start:len as documented
 		 * on fldigi website... but since end is always greater
@@ -396,10 +398,10 @@ handle_request(int si)
 		send_xmlrpc_response(csocks[si], "boolean", buf);
 	}
 	else if (strcmp(cmd, "modem.run_macro") == 0) {
-		ret = atoi(req_buffer);
-		if (ret >= 0 && ret < sizeof(settings.macros) / sizeof(*settings.macros)) {
+		uret = strtoui(req_buffer, NULL, 10);
+		if (uret < sizeof(settings.macros) / sizeof(*settings.macros)) {
 			send_xmlrpc_response(csocks[si], NULL, NULL);
-			do_macro(ret + 1);
+			do_macro(uret + 1);
 		}
 		else
 			send_xmlrpc_fault(csocks[si]);
@@ -596,7 +598,7 @@ static int
 xr_sock_readln(int *sock, char *buf, size_t bufsz)
 {
 	fd_set rd;
-	int i;
+	size_t i;
 	int bytes = 0;
 	int ret;
 	struct timeval tv;
@@ -644,10 +646,10 @@ done:
 }
 
 static int
-xr_sock_readbuf(int *sock, char **buf, size_t *bufsz, size_t *buflen, long len)
+xr_sock_readbuf(int *sock, char **buf, size_t *bufsz, unsigned long len)
 {
 	fd_set rd;
-	int i;
+	unsigned long i;
 	int ret;
 	struct timeval tv;
 	char *tmp;
@@ -701,9 +703,9 @@ done:
 }
 
 static void
-remove_sock(int *sarr, size_t *n, fd_set *fds, int *max, int si)
+remove_sock(int *sarr, size_t *n, fd_set *fds, int *max, size_t si)
 {
-	int i;
+	size_t i;
 
 	if (max && *max == sarr[si]) {
 		*max = 0;

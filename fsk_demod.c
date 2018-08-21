@@ -81,16 +81,16 @@ static struct bq_filter *afilt;
 // Hunt for Start
 static double *hfs_buf;
 static size_t hfs_bufmax;
-static int hfs_head;
-static int hfs_tail;
-static int hfs_start;
-static int hfs_b0;
-static int hfs_b1;
-static int hfs_b2;
-static int hfs_b3;
-static int hfs_b4;
-static int hfs_stop1;
-static int hfs_stop2;
+static size_t hfs_head;
+static size_t hfs_tail;
+static size_t hfs_start;
+static size_t hfs_b0;
+static size_t hfs_b1;
+static size_t hfs_b2;
+static size_t hfs_b3;
+static size_t hfs_b4;
+static size_t hfs_stop1;
+static size_t hfs_stop2;
 
 /* Audio variables */
 static int dsp = -1;
@@ -704,9 +704,9 @@ free_fir_filter(struct fir_filter *f)
 }
 
 void
-setup_spectrum_filters(int buckets)
+setup_spectrum_filters(size_t buckets)
 {
-	int i;
+	size_t i;
 	double freq_step = 4000 / (buckets + 1);
 	double freq;
 	double q;
@@ -758,7 +758,7 @@ setup_spectrum_filters(int buckets)
 static void
 feed_waterfall(int16_t value)
 {
-	int i;
+	size_t i;
 	double v;
 
 	if (tuning_style != TUNE_ASCIIFALL)
@@ -770,7 +770,7 @@ feed_waterfall(int16_t value)
 }
 
 double
-get_waterfall(int bucket)
+get_waterfall(size_t bucket)
 {
 	if (bucket < waterfall_width)
 		return waterfall_lp[bucket]->buf[0];

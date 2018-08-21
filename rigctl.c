@@ -101,7 +101,7 @@ format_freq(uint64_t freq)
 static int
 sock_readln(int sock, char *buf, size_t bufsz)
 {
-	int i;
+	size_t i;
 	int ret;
 
 	for (i = 0; i < bufsz - 1; i++) {
@@ -218,7 +218,7 @@ set_rig_ptt(bool val)
 	if (settings.ctl_ptt) {
 		if (rigctld_socket != -1) {
 			sprintf(buf, "T %d\n", val);
-			if (send(rigctld_socket, buf, strlen(buf), 0) != strlen(buf))
+			if (send(rigctld_socket, buf, strlen(buf), 0) != (ssize_t)strlen(buf))
 				goto next;
 			if (sock_readln(rigctld_socket, buf, sizeof(buf)) <= 0)
 				printf_errno("lost connection setting rig PTT");

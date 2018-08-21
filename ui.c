@@ -54,8 +54,8 @@ static WINDOW *tuning_aid;
 static WINDOW *rx_title;
 static WINDOW *tx;
 static WINDOW *tx_title;
-static int tx_width;
-static int tx_height;
+static size_t tx_width;
+static size_t tx_height;
 static bool reset_tuning;
 static uint64_t last_freq;
 static char last_mode[16] = "";
@@ -66,7 +66,7 @@ static bool baudot_char(int ch, const void *ab);
 static bool baudot_macro_char(int ch, const void *ab);
 static void capture_call(int y, int x);
 static void do_endwin(void);
-static char *escape_config(char *str, bool macro);
+static char *escape_config(char *str);
 static int find_field(const char *key);
 static bool get_figs(chtype ch);
 static void setup_windows(void);
@@ -74,7 +74,7 @@ static char *strip_spaces(char *str);
 static void teardown_windows(void);
 static void toggle_figs(int y, int x);
 static void w_printf(WINDOW *win, const char *format, ...);
-static char *unescape_config(char *str, bool macro);
+static char *unescape_config(char *str);
 static void update_waterfall(void);
 static void draw_tx_title(enum tuning_styles style);
 
@@ -379,92 +379,78 @@ show_freq(void)
 	if (freq == 0)
 		return;
 	freq += settings.freq_offset;
-	if (freq != last)
+	if (freq != last_freq) {
 		update = true;
-	switch (toupper(settings.callsign[0])) {
-		case 'A':
-			if (toupper(settings.callsign[0]) > 'L')
+		switch (toupper(settings.callsign[0])) {
+			case 'A':
+				if (toupper(settings.callsign[0]) > 'L')
+					break;
+			case 'K':
+			case 'N':
+			case 'W':
+				american = true;
 				break;
-		case 'K':
-		case 'N':
-		case 'W':
-			american = true;
-			break;
-	}
-	if (american) {
-		switch (freq) {
-			case 135870 ... 137800:
-			case 472170 ... 479000:
-			case 1800170 ... 2000000:
-			case 3500170 ... 3600000:
-			case 5332080 ... 5332090:
-			case 5348080 ... 5348090:
-			case 5358580 ... 5358590:
-			case 5373080 ... 5373090:
-			case 5405080 ... 5405090:
-			case 7000170 ... 7125000:
-			case 10100170 ... 10150000:
-			case 14000170 ... 14150000:
-			case 18068170 ... 18110000:
-			case 21000170 ... 21200000:
-			case 24890170 ... 24930000:
-			case 28000170 ... 28300000:
-			case 50100170 ... 51000000:
+		}
+		if (american) {
+			if ((freq >= 135870 && freq <= 137800) ||
+			    (freq >= 472170 && freq <= 479000) ||
+			    (freq >= 1800170 && freq <= 2000000) ||
+			    (freq >= 3500170 && freq <= 3600000) ||
+			    (freq >= 5332080 && freq <= 5332090) ||
+			    (freq >= 5348080 && freq <= 5348090) ||
+			    (freq >= 5358580 && freq <= 5358590) ||
+			    (freq >= 5373080 && freq <= 5373090) ||
+			    (freq >= 5405080 && freq <= 5405090) ||
+			    (freq >= 7000170 && freq <= 7125000) ||
+			    (freq >= 10100170 && freq <= 10150000) ||
+			    (freq >= 14000170 && freq <= 14150000) ||
+			    (freq >= 18068170 && freq <= 18110000) ||
+			    (freq >= 21000170 && freq <= 21200000) ||
+			    (freq >= 24890170 && freq <= 24930000) ||
+			    (freq >= 28000170 && freq <= 28300000) ||
+			    (freq >= 50100170 && freq <= 51000000))
 				legal = true;
-				break;
 		}
-	}
-	else
-		legal = true;
-	// I don't feel like doing VHF+ really...
-	if (freq >= 144100170) {
-		legal = true;
-		subband = true;
-		contest = true;
-	}
-	switch (freq) {
-		case 1800170 ... 1810000:
-		case 3580170 ... 3600000:
-		case 7030170 ... 7050000:
-		case 7080170 ... 7100000:
-		case 10130170 ... 10150000:
-		case 14080670 ... 14099499:
-		case 18100000 ... 18109499:
-		case 21080670 ... 21100000:
-		case 24910170 ... 24929499:
-		case 28080670 ... 28100000:
+		else
+			legal = true;
+		// I don't feel like doing VHF+ really...
+		if (freq >= 144100170) {
+			legal = true;
 			subband = true;
-			break;
-	}
-	switch (freq) {
-		case 14080670 ... 14150000:
-			if (freq >= 14099500 && freq <= 14100670)	// NCDXF/IARU Beacon
-				break;
-		case 21080670 ... 21150000:
-			if (freq >= 21070000 && freq <= 21076170)	// PSK31 to FT-8
-				break;
-		case 28080670 ... 28200000:
-			if (freq >= 28199500 && freq <= 28200670)	// NCDXF/IARU Beacon
-				break;
-		case 3570170 ... 3600000:
-		case 7025170 ... 7100000:
 			contest = true;
-	}
-	if (subband)
-		wcolor_set(status, TTY_COLOR_IN_SUBBAND, NULL);
-	else if (contest)
-		wcolor_set(status, TTY_COLOR_IN_CONTEST, NULL);
-	else if (legal)
-		wcolor_set(status, TTY_COLOR_LEGAL, NULL);
-	else
-		wcolor_set(status, TTY_COLOR_OUT_OF_BAND, NULL);
-	if (freq) {
-		if (last_freq != freq) {
-			sprintf(fstr, "%14s", format_freq(freq));
-			mvwaddstr(status, 0, 15, fstr);
 		}
+		if ((freq >= 1800170 && freq <= 1810000) ||
+		    (freq >= 3580170 && freq <= 3600000) ||
+		    (freq >= 7030170 && freq <= 7050000) ||
+		    (freq >= 7080170 && freq <= 7100000) ||
+		    (freq >= 10130170 && freq <= 10150000) ||
+		    (freq >= 14080670 && freq <= 14099499) ||
+		    (freq >= 18100000 && freq <= 18109499) ||
+		    (freq >= 21080670 && freq <= 21100000) ||
+		    (freq >= 24910170 && freq <= 24929499) ||
+		    (freq >= 28080670 && freq <= 28100000))
+			subband = true;
+		if (((freq >= 14080670 && freq <= 14150000) &&
+		     (freq < 14099500 || freq > 14100670)) ||	// NCDXF/IARU Beacon
+		    ((freq >= 21080670 && freq <= 21150000) &&
+		     (freq < 21070000 || freq > 21076170)) ||	// PSK31 to FT-8
+		    ((freq >= 28080670 && freq <= 28200000) &&
+		      (freq < 28199500 || freq > 28200670)) ||	// NCDXF/IARU Beacon
+		    (freq >= 3570170 && freq <= 3600000) ||
+		    (freq >= 7025170 && freq <= 7100000))
+			contest = true;
+		if (subband)
+			wcolor_set(status, TTY_COLOR_IN_SUBBAND, NULL);
+		else if (contest)
+			wcolor_set(status, TTY_COLOR_IN_CONTEST, NULL);
+		else if (legal)
+			wcolor_set(status, TTY_COLOR_LEGAL, NULL);
+		else
+			wcolor_set(status, TTY_COLOR_OUT_OF_BAND, NULL);
+		sprintf(fstr, "%14s", format_freq(freq));
+		mvwaddstr(status, 0, 15, fstr);
+		wcolor_set(status, TTY_COLOR_NORMAL, NULL);
 	}
-	wcolor_set(status, TTY_COLOR_NORMAL, NULL);
 	if (strcmp(mode, last_mode)) {
 		wmove(status, 0, 30);
 		w_printf(status, "%-5s", mode);
@@ -526,7 +512,8 @@ printf_errno(const char *format, ...)
 static void
 draw_tx_title(enum tuning_styles style)
 {
-	int i, y, x;
+	size_t i;
+	int y, x;
 
 	wmove(tx_title, 0, 0);
 	for (i = 0; i < 3; i++)
@@ -694,7 +681,7 @@ struct field_info {
 		STYPE_UINT16
 	} type;
 	void *ptr;
-	int flen;
+	size_t flen;
 	bool eol;
 } fields[] = {
 	{
@@ -915,7 +902,7 @@ struct field_info {
 void
 change_settings(void)
 {
-	int i;
+	size_t i;
 	FIELD *field[NUM_FIELDS + 1];
 	FORM *frm;
 	int ch;
@@ -926,7 +913,7 @@ change_settings(void)
 	FILE *config;
 	char *fname;
 	char *bd;
-	int ffy, ffx;
+	size_t ffy, ffx;
 	int keywidth = 18;
 
 	baudot = new_fieldtype(NULL, baudot_char);
@@ -967,7 +954,7 @@ change_settings(void)
 					bd = strdup(*(char **)fields[i].ptr);
 					if (bd == NULL)
 						printf_errno("strup()ing baudot string");
-					escape_config(bd, false);
+					escape_config(bd);
 					set_field_buffer(field[i], 0, bd);
 					free(bd);
 				}
@@ -982,7 +969,7 @@ change_settings(void)
 					bd = strdup(*(char **)fields[i].ptr);
 					if (bd == NULL)
 						printf_errno("strup()ing baudot string");
-					escape_config(bd, true);
+					escape_config(bd);
 					set_field_buffer(field[i], 0, bd);
 					free(bd);
 				}
@@ -1097,10 +1084,10 @@ done:
 		for (i = 0; i < NUM_FIELDS; i++) {
 			switch(fields[i].type) {
 				case STYPE_BAUDOT:
-					fprintf(config, "%s=%s\n", fields[i].key, escape_config(unescape_config(field_buffer(field[i], 0), false), false));
+					fprintf(config, "%s=%s\n", fields[i].key, escape_config(unescape_config(field_buffer(field[i], 0))));
 					break;
 				case STYPE_MACRO:
-					fprintf(config, "%s=%s\n", fields[i].key, escape_config(unescape_config(field_buffer(field[i], 0), true), true));
+					fprintf(config, "%s=%s\n", fields[i].key, escape_config(unescape_config(field_buffer(field[i], 0))));
 					break;
 				default:
 					fprintf(config, "%s=%s\n", fields[i].key, strip_spaces(field_buffer(field[i], 0)));
@@ -1141,6 +1128,7 @@ done:
 static bool
 baudot_char(int ch, const void *ab)
 {
+	(void)ab;
 	if (asc2baudot(ch, false))
 		return true;
 	if (ch == '~')
@@ -1153,6 +1141,7 @@ baudot_char(int ch, const void *ab)
 static bool
 baudot_macro_char(int ch, const void *ab)
 {
+	(void)ab;
 	if (asc2baudot(ch, false))
 		return true;
 	switch (ch) {
@@ -1180,7 +1169,7 @@ strip_spaces(char *str)
 }
 
 static char *
-escape_config(char *str, bool macro)
+escape_config(char *str)
 {
 	char *ch;
 
@@ -1202,7 +1191,7 @@ escape_config(char *str, bool macro)
 }
 
 static char *
-unescape_config(char *str, bool macro)
+unescape_config(char *str)
 {
 	char *ch;
 
@@ -1265,13 +1254,13 @@ load_config(void)
 				if (*(char **)fields[field].ptr)
 					free(*(char **)fields[field].ptr);
 				*(char **)fields[field].ptr = strdup(ch);
-				unescape_config(*(char **)fields[field].ptr, false);
+				unescape_config(*(char **)fields[field].ptr);
 				break;
 			case STYPE_MACRO:
 				if (*(char **)fields[field].ptr)
 					free(*(char **)fields[field].ptr);
 				*(char **)fields[field].ptr = strdup(ch);
-				unescape_config(*(char **)fields[field].ptr, true);
+				unescape_config(*(char **)fields[field].ptr);
 				break;
 			case STYPE_DOUBLE:
 				*(double *)fields[field].ptr = strtod(ch, NULL);
@@ -1294,9 +1283,9 @@ load_config(void)
 static int
 find_field(const char *key)
 {
-	int i;
+	size_t i;
 
-	for (i = 0; i < NUM_FIELDS; i++) {
+	for (i = 0; i < (int)NUM_FIELDS; i++) {
 		if (strcasecmp(fields[i].key, key) == 0)
 			return i;
 	}
@@ -1543,7 +1532,7 @@ static void
 update_waterfall(void)
 {
 	const char chars[] = " .',\";:+*|=$#";
-	int i;
+	size_t i;
 	double min = INFINITY;
 	double max = 0;
 	double v;
