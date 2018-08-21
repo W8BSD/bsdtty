@@ -56,6 +56,7 @@ static struct afsk_buf space_to_space;
 enum afsk_bit last_afsk_bit = AFSK_UNKNOWN;
 static int dsp_afsk = -1;
 static int dsp_afsk_channels = 1;
+static int afsk_dsp_rate = 48000;
 
 static void adjust_wave(struct afsk_buf *buf, double start_phase);
 static void generate_afsk_samples(void);
@@ -66,8 +67,8 @@ static void
 generate_sine(double freq, struct afsk_buf *buf)
 {
 	size_t i;
-	double wavelen = settings.dsp_rate / freq;
-	size_t nsamp = settings.dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator * 2) + 2;
+	double wavelen = afsk_dsp_rate / freq;
+	size_t nsamp = afsk_dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator * 2) + 2;
 
 	if (buf->buf)
 		free(buf->buf);
@@ -250,13 +251,8 @@ setup_afsk_audio(void)
 		printf_errno("16-bit native endian audio not supported");
 	if (ioctl(dsp_afsk, SNDCTL_DSP_CHANNELS, &dsp_afsk_channels) == -1)
 		printf_errno("setting afsk channels");
-	if (i != dsp_afsk_channels)
-		printf_errno("afsk channel mismatch");
-	i = settings.dsp_rate;
-	if (ioctl(dsp_afsk, SNDCTL_DSP_SPEED, &i) == -1)
+	if (ioctl(dsp_afsk, SNDCTL_DSP_SPEED, &afsk_dsp_rate) == -1)
 		printf_errno("setting sample rate");
-	if (i != settings.dsp_rate)
-		printf_errno("afsk sample rate mismatch");
 }
 
 void
