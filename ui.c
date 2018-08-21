@@ -207,7 +207,6 @@ update_tuning_aid(double mark, double space)
 		 * value.
 		 */
 		if (cmaxm < maxm / 3 && cmaxs < maxs / 3) {
-//fprintf(stderr, "Scaling by %0.2f (1 - (%d / %d)\n", 1 - ((double)settings.dsp_rate / nsamp), settings.dsp_rate, nsamp);
 			maxm *= 1 - ((double)nsamp / settings.dsp_rate);
 			maxs *= 1 - ((double)nsamp / settings.dsp_rate);
 		}
