@@ -24,7 +24,7 @@
  *
  */
 
-//#define NOISE_CORRECT
+#define NOISE_CORRECT
 
 #include <sys/soundcard.h>
 #include <sys/types.h>
@@ -386,6 +386,7 @@ current_value(void)
 {
 	int16_t sample;
 	double mv, emv, sv, esv, cv, a;
+	float mns, sns;
 
 	sample = read_audio();
 
@@ -394,6 +395,8 @@ current_value(void)
 	emv = bq_filter(mv*mv, mlpfilt);
 	esv = bq_filter(sv*sv, slpfilt);
 #ifdef NOISE_CORRECT
+	mns = emv;
+	sns = esv;
 	emv -= mnoise;
 	esv -= snoise;
 #endif
@@ -413,9 +416,9 @@ current_value(void)
 	 */
 #ifdef NOISE_CORRECT
 	if (emv > esv)
-		mnsamp = emv;
+		mnsamp = mns;
 	else
-		snsamp = esv;
+		snsamp = sns;
 #endif
 	cv = emv - esv;
 
