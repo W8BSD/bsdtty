@@ -38,6 +38,13 @@
 #include "bsdtty.h"
 #include "ui.h"
 
+enum afsk_bit {
+	AFSK_SPACE,
+	AFSK_MARK,
+	AFSK_STOP,
+	AFSK_UNKNOWN
+};
+
 /* AFSK buffers */
 /*
  * Each of these is half of a bit-time long
@@ -62,6 +69,7 @@ static void adjust_wave(struct afsk_buf *buf, double start_phase);
 static void generate_afsk_samples(void);
 static void generate_sine(double freq, struct afsk_buf *buf);
 static void send_afsk_buf(struct afsk_buf *buf);
+static void send_afsk_bit(enum afsk_bit bit);
 
 static void
 generate_sine(double freq, struct afsk_buf *buf)
@@ -121,7 +129,7 @@ generate_afsk_samples(void)
 	adjust_wave(&space_to_zero, 0.0);
 }
 
-void
+static void
 send_afsk_bit(enum afsk_bit bit)
 {
 	switch(bit) {
@@ -234,10 +242,11 @@ end_afsk_tx(void)
 }
 
 void
-setup_afsk_audio(void)
+setup_afsk(int tty)
 {
 	int i;
 
+	(void)tty;
 	generate_afsk_samples();
 	if (dsp_afsk != -1)
 		close(dsp_afsk);
@@ -274,4 +283,20 @@ afsk_toggle_reverse(void)
 	tbuf = mark_to_mark.buf;
 	mark_to_mark.buf = space_to_space.buf;
 	space_to_space.buf = tbuf;
+}
+
+void
+send_afsk_preamble(void)
+{
+	send_afsk_bit(AFSK_STOP);
+	send_afsk_bit(AFSK_STOP);
+	send_afsk_bit(AFSK_STOP);
+	send_afsk_bit(AFSK_STOP);
+	send_afsk_bit(AFSK_STOP);
+}
+
+void
+diddle_afsk(void)
+{
+	send_afsk_char(0x1f);
 }

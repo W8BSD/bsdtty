@@ -43,6 +43,7 @@
 #include <unistd.h>
 
 #include "afsk_send.h"
+#include "fsk_send.h"
 #include "baudot.h"
 #include "bsdtty.h"
 #include "fldigi_xmlrpc.h"
@@ -226,7 +227,9 @@ int main(int argc, char **argv)
 
 	// And AFSK
 	if (settings.afsk)
-		setup_afsk_audio();
+		setup_afsk(tty);
+	else
+		setup_fsk(tty);
 
 	// Set up the log file
 	setup_log();
@@ -252,7 +255,10 @@ reinit(void)
 
 	// Set up the FSK stuff.
 	setup_rx();
-	setup_afsk_audio();
+	if (settings.afsk)
+		setup_afsk(tty);
+	else
+		setup_fsk(tty);
 
 	// Set up the log file
 	setup_log();
@@ -441,7 +447,9 @@ do_tx(int *rxstate)
 	switch (ch) {
 		case -1:
 			if (settings.afsk)
-				send_rtty_char(0x1f);
+				diddle_afsk();
+			else
+				diddle_fsk();
 			break;
 		case 3:
 			return false;
@@ -647,17 +655,10 @@ send_char(const char ch)
 			 * This also covers the RX -> TX switching time
 			 * due to the relay.
 			 */
-			if (settings.afsk) {
-				send_afsk_bit(AFSK_STOP);
-				send_afsk_bit(AFSK_STOP);
-				send_afsk_bit(AFSK_STOP);
-				send_afsk_bit(AFSK_STOP);
-				send_afsk_bit(AFSK_STOP);
-			}
-			else {
-				/* Hold it in mark for 1 byte time. */
-				usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
-			}
+			if (settings.afsk)
+				send_afsk_preamble();
+			else
+				send_fsk_preamble();
 			txfigs = false;
 			/*
 			 * Per ITU-T S.1, the FIRST symbol should be a
@@ -817,8 +818,7 @@ send_rtty_char(char ch)
 		send_afsk_char(ch);
 	}
 	else {
-		if (write(tty, &ch, 1) != 1)
-			printf_errno("error sending FIGS/LTRS");
+		send_fsk_char(ch);
 	}
 }
 
