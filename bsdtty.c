@@ -58,10 +58,10 @@ static void input_loop(void);
 static void send_char(const char ch);
 static void send_rtty_char(char ch);
 static void setup_log(void);
-static void setup_tty(void);
 noreturn static void usage(const char *cmd);
 static void setup_defaults(void);
 static void fix_config(void);
+struct send_fsk_api *send_fsk;
 
 struct bt_settings settings = {
 	.baud_numerator = 1000,
@@ -78,9 +78,6 @@ struct bt_settings settings = {
 	.rigctld_port = 4532,
 	.xmlrpc_port = 7362
 };
-
-/* UART Stuff */
-static int tty = -1;
 
 /* RX in reverse mode */
 bool reverse = false;
@@ -208,8 +205,6 @@ int main(int argc, char **argv)
 	setup_defaults();
 	fix_config();
 
-	setup_tty();
-
 	setlocale(LC_ALL, "");
 	atexit(done);
 
@@ -227,9 +222,11 @@ int main(int argc, char **argv)
 
 	// And AFSK
 	if (settings.afsk)
-		setup_afsk(tty);
+		send_fsk = &afsk_api;
 	else
-		setup_fsk(tty);
+		send_fsk = &fsk_api;
+
+	send_fsk->setup();
 
 	// Set up the log file
 	setup_log();
@@ -238,7 +235,7 @@ int main(int argc, char **argv)
 	update_squelch(sync_squelch);
 	update_serial(serial);
 
-	setup_rig_control(tty);
+	setup_rig_control();
 
 	// Finally, do the thing.
 	input_loop();
@@ -251,19 +248,18 @@ reinit(void)
 	load_config();
 	fix_config();
 
-	setup_tty();
-
 	// Set up the FSK stuff.
 	setup_rx();
 	if (settings.afsk)
-		setup_afsk(tty);
+		send_fsk = &afsk_api;
 	else
-		setup_fsk(tty);
+		send_fsk = &fsk_api;
+	send_fsk->setup();
 
 	// Set up the log file
 	setup_log();
 
-	setup_rig_control(tty);
+	setup_rig_control();
 }
 
 static void
@@ -307,67 +303,6 @@ setup_log(void)
 	now = time(NULL);
 	if (log_file != NULL)
 		fprintf(log_file, "\n\n%s\n", ctime(&now));
-}
-
-/*
- * Since opening the TTY and setting the attributes always forces DTR
- * and RTS, don't initialize these at the start since it's dangerous.
- */
-static void
-setup_tty(void)
-{
-	struct termios t;
-	int state = TIOCM_DTR | TIOCM_RTS;
-#ifdef TIOCSFBAUD
-	struct baud_fraction bf;
-#endif
-
-	// Set up the UART
-	if (tty != -1)
-		close(tty);
-	tty = open(settings.tty_name, O_RDWR|O_DIRECT|O_NONBLOCK);
-	if (tty == -1)
-		printf_errno("unable to open %s");
-
-	/*
-	 * In case stty wasn't used on the init device, turn off DTR and
-	 * CTS hopefully before anyone notices
-	 */
-	if (ioctl(tty, TIOCMBIC, &state) != 0)
-		printf_errno("unable clear RTS/DTR on '%s'", settings.tty_name);
-
-	if (tcgetattr(tty, &t) == -1)
-		printf_errno("unable to read term caps");
-
-	cfmakeraw(&t);
-
-	/* May as well set to 45 for devices that don't support FBAUD */
-	if (cfsetspeed(&t, settings.baud_numerator/settings.baud_denominator) == -1)
-		printf_errno("unable to set speed to 45 baud");
-
-	/*
-	 * NOTE: With 8250 compatible UARTs, CS5 | CSTOPB is 1.5 stop
-	 * bits, not 2 as documented in the man page.  This is good since
-	 * it's what we want anyway.
-	 */
-	t.c_iflag = IGNBRK;
-	t.c_oflag = 0;
-	t.c_cflag = CS5 | CSTOPB | CLOCAL | CNO_RTSDTR;
-
-	if (tcsetattr(tty, TCSADRAIN, &t) == -1)
-		printf_errno("unable to set attributes");
-
-	if (tcgetattr(tty, &t) == -1)
-		printf_errno("unable to read term caps");
-
-	if (ioctl(tty, TIOCMBIC, &state) != 0)
-		printf_errno("unable clear RTS/DTR");
-#ifdef TIOCSFBAUD
-	bf.bf_numerator = settings.baud_numerator;
-	bf.bf_denominator = settings.baud_denominator;
-	ioctl(tty, TIOCSFBAUD, &bf);
-	ioctl(tty, TIOCGFBAUD, &bf);
-#endif
 }
 
 static void
@@ -446,10 +381,7 @@ do_tx(int *rxstate)
 	ch = get_input();
 	switch (ch) {
 		case -1:
-			if (settings.afsk)
-				diddle_afsk();
-			else
-				diddle_fsk();
+			send_fsk->diddle();
 			break;
 		case 3:
 			return false;
@@ -513,7 +445,7 @@ do_tx(int *rxstate)
 			break;
 		case '`':
 			toggle_reverse(&reverse);
-			afsk_toggle_reverse();
+			send_fsk->toggle_reverse();
 			*rxstate = -1;
 			break;
 		case '[':
@@ -626,13 +558,7 @@ send_char(const char ch)
 		if (!rts) {
 			if (send_end_space)
 				send_rtty_char(4);
-			if (settings.afsk)
-				end_afsk_tx();
-			else {
-				ioctl(tty, TIOCDRAIN);
-				// Space still gets cut off... wait one char
-				usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
-			}
+			send_fsk->end_tx();
 		}
 		if (rts) {
 			get_rig_freq_mode(&freq, mode, sizeof(mode));
@@ -655,10 +581,7 @@ send_char(const char ch)
 			 * This also covers the RX -> TX switching time
 			 * due to the relay.
 			 */
-			if (settings.afsk)
-				send_afsk_preamble();
-			else
-				send_fsk_preamble();
+			send_fsk->send_preamble();
 			txfigs = false;
 			/*
 			 * Per ITU-T S.1, the FIRST symbol should be a
@@ -814,12 +737,7 @@ usage(const char *cmd)
 static void
 send_rtty_char(char ch)
 {
-	if (settings.afsk) {
-		send_afsk_char(ch);
-	}
-	else {
-		send_fsk_char(ch);
-	}
+	send_fsk->send_char(ch);
 }
 
 void
@@ -859,4 +777,40 @@ fix_config(void)
 		settings.charset = 0;
 	if (settings.rigctld_host == NULL || settings.rigctld_host[0] == 0 || settings.rigctld_port == 0)
 		settings.ctl_ptt = false;
+}
+
+const char *
+format_freq(uint64_t freq)
+{
+	static char fstr[32];
+	const char *prefix = " kMGTPEZY";
+	int pc = 0;
+	int pos;
+	char *ch;
+
+	fstr[0] = 0;
+	if (freq) {
+		sprintf(fstr, "%" PRIu64, freq);
+		for (pos = strlen(fstr) - 3; pos > 0; pos -= 3) {
+			memmove(&fstr[pos]+1, &fstr[pos], strlen(&fstr[pos])+1);
+			fstr[pos] = '.';
+		}
+	}
+	while (strlen(fstr) > 11) {
+		ch = strrchr(fstr, '.');
+		if (ch == NULL)
+			printf_errno("unable to find dot in freq \"%s\"", fstr);
+		*ch = 0;
+		pc++;
+	}
+
+	ch = strrchr(fstr, 0);
+	if (ch == NULL)
+		printf_errno("unable to find end of string");
+	*(ch++) = prefix[pc];
+	*(ch++) = 'H';
+	*(ch++) = 'z';
+	*ch = 0;
+
+	return fstr;
 }

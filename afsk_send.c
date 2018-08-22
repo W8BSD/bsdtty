@@ -209,7 +209,7 @@ send_afsk_buf(struct afsk_buf *buf)
 	}
 }
 
-void
+static void
 send_afsk_char(char ch)
 {
 	int i;
@@ -222,7 +222,7 @@ send_afsk_char(char ch)
 	send_afsk_bit(AFSK_STOP);
 }
 
-void
+static void
 end_afsk_tx(void)
 {
 	switch(last_afsk_bit) {
@@ -241,12 +241,11 @@ end_afsk_tx(void)
 		printf_errno("syncing AFSK playback");
 }
 
-void
-setup_afsk(int tty)
+static void
+setup_afsk()
 {
 	int i;
 
-	(void)tty;
 	generate_afsk_samples();
 	if (dsp_afsk != -1)
 		close(dsp_afsk);
@@ -264,7 +263,7 @@ setup_afsk(int tty)
 		printf_errno("setting sample rate");
 }
 
-void
+static void
 afsk_toggle_reverse(void)
 {
 	int16_t *tbuf;
@@ -285,7 +284,7 @@ afsk_toggle_reverse(void)
 	space_to_space.buf = tbuf;
 }
 
-void
+static void
 send_afsk_preamble(void)
 {
 	send_afsk_bit(AFSK_STOP);
@@ -295,8 +294,18 @@ send_afsk_preamble(void)
 	send_afsk_bit(AFSK_STOP);
 }
 
-void
+static void
 diddle_afsk(void)
 {
 	send_afsk_char(0x1f);
 }
+
+struct send_fsk_api afsk_api = {
+	.toggle_reverse = afsk_toggle_reverse,
+	.end_tx = end_afsk_tx,
+	.send_preamble = send_afsk_preamble,
+	.send_char = send_afsk_char,
+	.setup = setup_afsk,
+	.diddle = diddle_afsk
+};
+

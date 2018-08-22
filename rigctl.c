@@ -6,6 +6,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 
+#include <fcntl.h>
 #include <inttypes.h>
 #include <netdb.h>
 #include <stdbool.h>
@@ -18,11 +19,12 @@
 
 static int sock_readln(int sock, char *buf, size_t bufsz);
 static int rigctld_socket = -1;
-static int rc_tty;
+static int rc_tty = -1;
 
 void
-setup_rig_control(int tty)
+setup_rig_control(void)
 {
+	int state = TIOCM_DTR | TIOCM_RTS;
 	struct addrinfo hints = {
 		.ai_family = AF_UNSPEC,
 		.ai_socktype = SOCK_STREAM,
@@ -33,8 +35,8 @@ setup_rig_control(int tty)
 	struct addrinfo *aip;
 	char port[6];
 	int opt;
+	bool want_tty;
 
-	rc_tty = tty;
 	if (rigctld_socket != -1) {
 		close(rigctld_socket);
 		rigctld_socket = -1;
@@ -56,46 +58,32 @@ setup_rig_control(int tty)
 			close(rigctld_socket);
 			rigctld_socket = -1;
 		}
-		if (settings.ctl_ptt && rigctld_socket == -1)
-			printf_errno("unable to connect to rigctld");
+		if (settings.ctl_ptt) {
+			if (rigctld_socket == -1)
+				printf_errno("unable to connect to rigctld");
+		}
+		else
+			want_tty = true;
 		freeaddrinfo(ai);
 	}
-}
+	else
+		want_tty = true;
 
-const char *
-format_freq(uint64_t freq)
-{
-	static char fstr[32];
-	const char *prefix = " kMGTPEZY";
-	int pc = 0;
-	int pos;
-	char *ch;
+	if (want_tty) {
+		// Set up the UART
+		if (rc_tty != -1)
+			close(rc_tty);
+		rc_tty = open(settings.tty_name, O_RDWR|O_DIRECT|O_NONBLOCK);
+		if (rc_tty == -1)
+			printf_errno("unable to open %s");
 
-	fstr[0] = 0;
-	if (freq) {
-		sprintf(fstr, "%" PRIu64, freq);
-		for (pos = strlen(fstr) - 3; pos > 0; pos -= 3) {
-			memmove(&fstr[pos]+1, &fstr[pos], strlen(&fstr[pos])+1);
-			fstr[pos] = '.';
-		}
+		/*
+		 * In case stty wasn't used on the init device, turn off DTR and
+		 * CTS hopefully before anyone notices
+		 */
+		if (ioctl(rc_tty, TIOCMBIC, &state) != 0)
+			printf_errno("unable clear RTS/DTR on '%s'", settings.tty_name);
 	}
-	while (strlen(fstr) > 11) {
-		ch = strrchr(fstr, '.');
-		if (ch == NULL)
-			printf_errno("unable to find dot in freq \"%s\"", fstr);
-		*ch = 0;
-		pc++;
-	}
-
-	ch = strrchr(fstr, 0);
-	if (ch == NULL)
-		printf_errno("unable to find end of string");
-	*(ch++) = prefix[pc];
-	*(ch++) = 'H';
-	*(ch++) = 'z';
-	*ch = 0;
-
-	return fstr;
 }
 
 static int

@@ -44,6 +44,7 @@
 #include "baudot.h"
 #include "bsdtty.h"
 #include "fsk_demod.h"
+#include "rigctl.h"
 #include "ui.h"
 
 /* UI Stuff */

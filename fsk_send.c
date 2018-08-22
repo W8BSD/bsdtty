@@ -24,46 +24,115 @@
  *
  */
 
+#include <sys/ioctl.h>
 #include <sys/types.h>
 
+#include <fcntl.h>
 #include <stdbool.h>
+#include <termios.h>
 #include <unistd.h>
 
 #include "bsdtty.h"
 #include "ui.h"
 
-static int fsk_tty;
+static int fsk_tty = -1;
 
-void fsk_toggle_reverse(void)
+static void
+fsk_toggle_reverse(void)
 {
 	// FSK can't be reversed.
-	return;
 }
 
-void end_fsk_tx(void)
+static void
+end_fsk_tx(void)
 {
-	// No housekeeping here.
-	return;
+	ioctl(fsk_tty, TIOCDRAIN);
+	// Space still gets cut off... wait one char
+	usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
 }
 
-void send_fsk_preamble(void)
+static void
+send_fsk_preamble(void)
 {
 	/* Hold it in mark for 1 byte time. */
 	usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
 }
 
-void send_fsk_char(char ch)
+static void
+send_fsk_char(char ch)
 {
 	if (write(fsk_tty, &ch, 1) != 1)
 		printf_errno("error sending FIGS/LTRS");
 }
 
-void setup_fsk(int ftty)
+static void
+setup_fsk(void)
 {
-	fsk_tty = ftty;
+	struct termios t;
+	int state = TIOCM_DTR | TIOCM_RTS;
+#ifdef TIOCSFBAUD
+	struct baud_fraction bf;
+#endif
+
+	// Set up the UART
+	if (fsk_tty != -1)
+		close(fsk_tty);
+	fsk_tty = open(settings.tty_name, O_RDWR|O_DIRECT|O_NONBLOCK);
+	if (fsk_tty == -1)
+		printf_errno("unable to open %s");
+
+	/*
+	 * In case stty wasn't used on the init device, turn off DTR and
+	 * CTS hopefully before anyone notices
+	 */
+	if (ioctl(fsk_tty, TIOCMBIC, &state) != 0)
+		printf_errno("unable clear RTS/DTR on '%s'", settings.tty_name);
+
+	if (tcgetattr(fsk_tty, &t) == -1)
+		printf_errno("unable to read term caps");
+
+	cfmakeraw(&t);
+
+	/* May as well set to 45 for devices that don't support FBAUD */
+	if (cfsetspeed(&t, settings.baud_numerator/settings.baud_denominator) == -1)
+		printf_errno("unable to set speed to 45 baud");
+
+	/*
+	 * NOTE: With 8250 compatible UARTs, CS5 | CSTOPB is 1.5 stop
+	 * bits, not 2 as documented in the man page.  This is good since
+	 * it's what we want anyway.
+	 */
+	t.c_iflag = IGNBRK;
+	t.c_oflag = 0;
+	t.c_cflag = CS5 | CSTOPB | CLOCAL | CNO_RTSDTR;
+
+	if (tcsetattr(fsk_tty, TCSADRAIN, &t) == -1)
+		printf_errno("unable to set attributes");
+
+	if (tcgetattr(fsk_tty, &t) == -1)
+		printf_errno("unable to read term caps");
+
+	if (ioctl(fsk_tty, TIOCMBIC, &state) != 0)
+		printf_errno("unable clear RTS/DTR");
+#ifdef TIOCSFBAUD
+	bf.bf_numerator = settings.baud_numerator;
+	bf.bf_denominator = settings.baud_denominator;
+	ioctl(fsk_tty, TIOCSFBAUD, &bf);
+	ioctl(fsk_tty, TIOCGFBAUD, &bf);
+#endif
 }
 
-void diddle_fsk(void)
+static void
+diddle_fsk(void)
 {
 	// fsk can't diddle.
 }
+
+struct send_fsk_api fsk_api = {
+	.toggle_reverse = fsk_toggle_reverse,
+	.end_tx = end_fsk_tx,
+	.send_preamble = send_fsk_preamble,
+	.send_char = send_fsk_char,
+	.setup = setup_fsk,
+	.diddle = diddle_fsk
+};
