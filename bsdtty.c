@@ -33,6 +33,7 @@
 #include <limits.h>
 #include <locale.h>
 #include <netdb.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -85,16 +86,20 @@ bool reverse = false;
 /* Log thing */
 static FILE *log_file;
 
-static char sync_buffer[9];
-static int sb_chars;
-static int sync_squelch = 1;
-static bool rxfigs;
 static bool txfigs;
 static bool send_start_crlf = true;
 static bool send_end_space = true;
+static pthread_t xmlrpc_thread;
+static pthread_t rx_thread;
+bool rts;
+// The mutex is to allow downgrading.
+pthread_mutex_t rts_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_rwlock_t rts_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 
 char *their_callsign;
 unsigned serial;
+pthread_rwlock_t settings_lock = PTHREAD_RWLOCK_INITIALIZER;
+pthread_mutex_t bsdtty_lock = PTHREAD_MUTEX_INITIALIZER;
 
 int main(int argc, char **argv)
 {
@@ -103,6 +108,7 @@ int main(int argc, char **argv)
 
 	load_config();
 
+	SETTING_WLOCK();
 	while ((ch = getopt(argc, argv, "ac:C:d:f:hl:i:I:m:n:N:p:P:q:Q:r:s:t:T1:x:2:3:4:5:6:7:8:9:0:")) != -1) {
 		while (optarg && isspace(*optarg))
 			optarg++;
@@ -142,6 +148,7 @@ int main(int argc, char **argv)
 				settings.freq_offset = strtoi(optarg, NULL, 10);
 				break;
 			case 'h':
+				SETTING_UNLOCK();
 				usage(argv[0]);
 			case 'i':
 				settings.rigctld_host = strdup(optarg);
@@ -198,12 +205,14 @@ int main(int argc, char **argv)
 				settings.xmlrpc_host = strdup(optarg);
 				break;
 			default:
+				SETTING_UNLOCK();
 				usage(argv[0]);
 		}
 	}
 
 	setup_defaults();
 	fix_config();
+	SETTING_UNLOCK();
 
 	setlocale(LC_ALL, "");
 	atexit(done);
@@ -212,28 +221,28 @@ int main(int argc, char **argv)
 	 * We want to set up the sockets before we setup curses since
 	 * it can spin writing to stderr.
 	 */
-	setup_xmlrpc();
+	setup_xmlrpc(&xmlrpc_thread);
 
 	// Now set up curses
 	setup_curses();
 
-	// Set up the FSK stuff.
-	setup_rx();
+	// Set up the RX stuff.
+	setup_rx(&rx_thread);
 
-	// And AFSK
+	// And TX
 	if (settings.afsk)
 		send_fsk = &afsk_api;
 	else
 		send_fsk = &fsk_api;
-
 	send_fsk->setup();
 
 	// Set up the log file
 	setup_log();
 
-	display_charset(charset_name(settings.charset));
-	update_squelch(sync_squelch);
+	display_charset(charset_name());
+	BSDTTY_LOCK();
 	update_serial(serial);
+	BSDTTY_UNLOCK();
 
 	setup_rig_control();
 
@@ -249,11 +258,15 @@ reinit(void)
 	fix_config();
 
 	// Set up the FSK stuff.
-	setup_rx();
+	pthread_cancel(rx_thread);
+	pthread_join(rx_thread, NULL);
+	setup_rx(&rx_thread);
+	SETTING_RLOCK();
 	if (settings.afsk)
 		send_fsk = &afsk_api;
 	else
 		send_fsk = &fsk_api;
+	SETTING_UNLOCK();
 	send_fsk->setup();
 
 	// Set up the log file
@@ -262,6 +275,9 @@ reinit(void)
 	setup_rig_control();
 }
 
+/*
+ * setting write lock must be held.
+ */
 static void
 setup_defaults(void)
 {
@@ -297,7 +313,9 @@ setup_log(void)
 		fclose(log_file);
 	if (log_file)
 		fclose(log_file);
+	SETTING_RLOCK();
 	log_file = fopen(settings.log_name, "a");
+	SETTING_UNLOCK();
 	if (log_file == NULL)
 		printf_errno("opening log file");
 	now = time(NULL);
@@ -314,61 +332,38 @@ handle_rx_char(char ch)
 		case 0x07:	// BEL
 			return;
 		case 0x0f:	// LTRS
-			rxfigs = false;
 			return;
 		case 0x0e:	// FIGS
-			rxfigs = true;
 			return;
-		case ' ':
-			rxfigs = false;	// USOS
 	}
 	if (log_file != NULL)
 		fwrite(&ch, 1, 1, log_file);
 	fldigi_add_rx(ch);
-	write_rx(ch);
 }
 
 static void
 input_loop(void)
 {
 	int rxstate = -1;
-	int i;
-	char ch;
 
 	while (1) {
-		handle_xmlrpc();
-		if (get_rig_ptt()) {	// TX Mode
+		RTS_RLOCK();
+		if (rts) {	// TX Mode
+			RTS_UNLOCK();
 			if (!do_tx(&rxstate))
 				return;
 			rxstate = -1;
 		}
 		else {
+			RTS_UNLOCK();
 			if (check_input()) {
 				if (!do_tx(&rxstate))
 					return;
 				continue;
 			}
 
-			rxstate = get_rtty_ch(rxstate);
-			if (rxstate < 0) {
-				sb_chars = 0;
-				rxfigs = false;
-				continue;
-			}
-			if (rxstate > 0x20)
-				printf_errno("got a==%d", rxstate);
-			ch = baudot2asc(rxstate, rxfigs);
-			if (sb_chars < sync_squelch) {
-				sync_buffer[sb_chars++] = ch;
-				if (sb_chars == sync_squelch) {
-					for (i = 0; i < sync_squelch; i++)
-						handle_rx_char(sync_buffer[i]);
-					continue;
-				}
-				else
-					continue;
-			}
-			handle_rx_char(ch);
+			for (rxstate = get_rtty_ch(); is_fsk_char(rxstate); rxstate = get_rtty_ch())
+				handle_rx_char(rxstate);
 		}
 	}
 }
@@ -415,64 +410,72 @@ do_tx(int *rxstate)
 		case RTTY_FKEY(10):
 			do_macro(10);
 			break;
-		case RTTY_KEY_LEFT:
-			sync_squelch--;
-			if (sync_squelch < 1)
-				sync_squelch = 1;
-			update_squelch(sync_squelch);
-			break;
-		case RTTY_KEY_RIGHT:
-			sync_squelch++;
-			if (sync_squelch > 9)
-				sync_squelch = 9;
-			update_squelch(sync_squelch);
-			break;
 		case RTTY_KEY_UP:
+			BSDTTY_LOCK();
 			serial++;
 			update_serial(serial);
+			BSDTTY_UNLOCK();
 			break;
 		case RTTY_KEY_DOWN:
+			BSDTTY_LOCK();
 			if (serial)
 				serial--;
 			update_serial(serial);
+			BSDTTY_UNLOCK();
 			break;
 		case RTTY_KEY_REFRESH:
-			display_charset(charset_name(settings.charset));
-			update_squelch(sync_squelch);
+			display_charset(charset_name());
+			BSDTTY_LOCK();
 			show_reverse(reverse);
 			update_captured_call(their_callsign);
 			update_serial(serial);
+			BSDTTY_UNLOCK();
 			break;
 		case '`':
+			BSDTTY_LOCK();
 			toggle_reverse(&reverse);
 			send_fsk->toggle_reverse();
+			BSDTTY_UNLOCK();
 			*rxstate = -1;
 			break;
 		case '[':
+			SETTING_WLOCK();
 			settings.charset--;
 			if (settings.charset < 0)
 				settings.charset = charset_count - 1;
-			display_charset(charset_name(settings.charset));
+			SETTING_UNLOCK();
+			display_charset(charset_name());
 			break;
 		case ']':
+			SETTING_WLOCK();
 			settings.charset++;
 			if (settings.charset == charset_count)
 				settings.charset = 0;
-			display_charset(charset_name(settings.charset));
+			SETTING_UNLOCK();
+			display_charset(charset_name());
 			break;
 		case '\\':
 			reset_tuning_aid();
 			break;
 		case 23:
-			if (!get_rig_ptt())
+			RTS_RLOCK();
+			if (rts) {
+				RTS_UNLOCK();
 				toggle_tuning_aid();
+			}
+			else
+				RTS_UNLOCK();
 			break;
 		case 0x7f:
 		case 0x08:
-			if (!get_rig_ptt()) {
+			RTS_RLOCK();
+			if (rts) {
+				RTS_UNLOCK();
 				change_settings();
 				*rxstate = -1;
 			}
+			else
+				RTS_UNLOCK();
 			break;
 		default:
 			send_char(ch);
@@ -482,13 +485,14 @@ do_tx(int *rxstate)
 }
 
 void
-send_string(const char *str)
+send_string(char *str)
 {
 	if (str == NULL)
 		return;
 
 	for (; *str; str++)
 		send_char(*str);
+	free(str);
 }
 
 bool
@@ -497,21 +501,27 @@ do_macro(int fkey)
 	size_t len;
 	size_t i;
 	int m;
-	char buf[11];
+	char *str;
 
 	m = fkey - 1;
-	if (settings.macros[m] == NULL)
+	SETTING_RLOCK();
+	if (settings.macros[m] == NULL) {
+		SETTING_UNLOCK();
 		return true;
+	}
 	if (strncasecmp(settings.macros[m], "CQ CQ", 5) == 0)
 		clear_rx_window();
 	len = strlen(settings.macros[m]);
 	for (i = 0; i < len; i++) {
 		switch (settings.macros[m][i]) {
 			case '\\':
-				send_string(settings.callsign);
+				send_string(strdup(settings.callsign));
 				break;
 			case '`':
-				send_string(their_callsign);
+				BSDTTY_LOCK();
+				str = strdup(their_callsign);
+				BSDTTY_UNLOCK();
+				send_string(str);
 				break;
 			case '[':
 				send_char('\r');
@@ -521,12 +531,18 @@ do_macro(int fkey)
 				send_char('\n');
 				break;
 			case '^':
+				BSDTTY_LOCK();
 				serial++;
+				BSDTTY_UNLOCK();
 				/* Fall-through */
 			case '%':
-				sprintf(buf, "%d", serial);
-				send_string(buf);
+				BSDTTY_LOCK();
+				asprintf(&str, "%d", serial);
+				BSDTTY_UNLOCK();
+				send_string(str);
+				BSDTTY_LOCK();
 				update_serial(serial);
+				BSDTTY_UNLOCK();
 				break;
 			default:
 				send_char(settings.macros[m][i]);
@@ -536,6 +552,7 @@ do_macro(int fkey)
 	if (len > 2)
 		if (strcasecmp(settings.macros[m] + len - 3, " CQ") == 0)
 			clear_rx_window();
+	SETTING_UNLOCK();
 	return true;
 }
 
@@ -544,26 +561,30 @@ send_char(const char ch)
 {
 	const char fstr[] = "\x1f\x1b"; // LTRS, FIGS
 	char bch;
-	bool rts;
 	char ach;
 	time_t now;
 	static uint64_t freq = 0;
 	static char mode[16];
 
 	bch = asc2baudot(ch, txfigs);
-	rts = get_rig_ptt();
 
+	RTS_WLOCK();
 	if (ch == '\t' || (!rts && bch != 0)) {
 		rts = !rts;
+		RTS_DGLOCK();
 		if (!rts) {
 			if (send_end_space)
 				send_rtty_char(4);
 			send_fsk->end_tx();
+			RX_UNLOCK();
 		}
 		if (rts) {
 			get_rig_freq_mode(&freq, mode, sizeof(mode));
-			if (freq)
+			if (freq) {
+				SETTING_RLOCK();
 				freq += settings.freq_offset;
+				SETTING_UNLOCK();
+			}
 		}
 		now = time(NULL);
 		if (log_file != NULL) {
@@ -573,9 +594,12 @@ send_char(const char ch)
 				fprintf(log_file, "\n------- %s of transmission (%.24s) on %s (%s) -------\n", rts ? "Start" : "End", ctime(&now), format_freq(freq), mode);
 			fflush(log_file);
 		}
+		if (rts)
+			RX_LOCK();
 		mark_tx_extent(rts);
 		set_rig_ptt(rts);
 		if (rts) {
+			// Stop the RX thread...
 			/* 
 			 * Start with a byte length of mark to help sync...
 			 * This also covers the RX -> TX switching time
@@ -596,6 +620,7 @@ send_char(const char ch)
 			}
 		}
 	}
+	RTS_UNLOCK();
 	if (bch == 0)
 		return;
 	if (bch) {
@@ -639,7 +664,10 @@ static void
 done(void)
 {
 	set_rig_ptt(false);
-	close_sockets();
+	pthread_cancel(xmlrpc_thread);
+	pthread_join(xmlrpc_thread, NULL);
+	pthread_cancel(rx_thread);
+	pthread_join(rx_thread, NULL);
 }
 
 int
@@ -743,15 +771,19 @@ send_rtty_char(char ch)
 void
 captured_callsign(const char *str)
 {
+	BSDTTY_LOCK();
 	if (their_callsign) {
 		free(their_callsign);
 		their_callsign = NULL;
 	}
-	if (str == NULL || str[0] == 0)
-		return;
-	their_callsign = strdup(str);
+	if (str != NULL && str[0] != 0)
+		their_callsign = strdup(str);
+	BSDTTY_UNLOCK();
 }
 
+/*
+ * Settings write lock must be held
+ */
 static void
 fix_config(void)
 {

@@ -29,6 +29,7 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -64,6 +65,9 @@ enum afsk_bit last_afsk_bit = AFSK_UNKNOWN;
 static int dsp_afsk = -1;
 static int dsp_afsk_channels = 1;
 static int afsk_dsp_rate = 48000;
+static pthread_mutex_t afsk_mutex = PTHREAD_MUTEX_INITIALIZER;
+#define AFSK_LOCK() pthread_mutex_lock(&afsk_mutex);
+#define AFSK_UNLOCK() pthread_mutex_unlock(&afsk_mutex);
 
 static void adjust_wave(struct afsk_buf *buf, double start_phase);
 static void generate_afsk_samples(void);
@@ -71,13 +75,17 @@ static void generate_sine(double freq, struct afsk_buf *buf);
 static void send_afsk_buf(struct afsk_buf *buf);
 static void send_afsk_bit(enum afsk_bit bit);
 
+/*
+ * Requires the setting lock to be held.
+ */
 static void
 generate_sine(double freq, struct afsk_buf *buf)
 {
 	size_t i;
 	double wavelen = afsk_dsp_rate / freq;
-	size_t nsamp = afsk_dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator * 2) + 2;
+	size_t nsamp;
 
+	nsamp = afsk_dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator * 2) + 2;
 	if (buf->buf)
 		free(buf->buf);
 	buf->buf = calloc(sizeof(buf->buf[0]) * nsamp, dsp_afsk_channels);
@@ -113,6 +121,9 @@ adjust_wave(struct afsk_buf *buf, double start_phase)
 	}
 }
 
+/*
+ * Requires the settings lock to be held
+ */
 static void
 generate_afsk_samples(void)
 {
@@ -214,17 +225,20 @@ send_afsk_char(char ch)
 {
 	int i;
 
+	AFSK_LOCK();
 	send_afsk_bit(AFSK_SPACE);
 	for (i = 0; i < 5; i++) {
 		send_afsk_bit(ch & 1 ? AFSK_MARK : AFSK_SPACE);
 		ch >>= 1;
 	}
 	send_afsk_bit(AFSK_STOP);
+	AFSK_UNLOCK();
 }
 
 static void
 end_afsk_tx(void)
 {
+	AFSK_LOCK();
 	switch(last_afsk_bit) {
 		case AFSK_UNKNOWN:
 			printf_errno("ending after unknown bit");
@@ -239,6 +253,7 @@ end_afsk_tx(void)
 	}
 	if (ioctl(dsp_afsk, SNDCTL_DSP_SYNC, NULL) == -1)
 		printf_errno("syncing AFSK playback");
+	AFSK_UNLOCK();
 }
 
 static void
@@ -246,6 +261,8 @@ setup_afsk()
 {
 	int i;
 
+	AFSK_LOCK();
+	SETTING_RLOCK();
 	generate_afsk_samples();
 	if (dsp_afsk != -1)
 		close(dsp_afsk);
@@ -261,6 +278,8 @@ setup_afsk()
 		printf_errno("setting afsk channels");
 	if (ioctl(dsp_afsk, SNDCTL_DSP_SPEED, &afsk_dsp_rate) == -1)
 		printf_errno("setting sample rate");
+	SETTING_UNLOCK();
+	AFSK_UNLOCK();
 }
 
 static void
@@ -268,6 +287,7 @@ afsk_toggle_reverse(void)
 {
 	int16_t *tbuf;
 
+	AFSK_LOCK();
 	/*
 	 * TX Stuff, swap samples
 	 */
@@ -282,16 +302,19 @@ afsk_toggle_reverse(void)
 	tbuf = mark_to_mark.buf;
 	mark_to_mark.buf = space_to_space.buf;
 	space_to_space.buf = tbuf;
+	AFSK_UNLOCK();
 }
 
 static void
 send_afsk_preamble(void)
 {
+	AFSK_LOCK();
 	send_afsk_bit(AFSK_STOP);
 	send_afsk_bit(AFSK_STOP);
 	send_afsk_bit(AFSK_STOP);
 	send_afsk_bit(AFSK_STOP);
 	send_afsk_bit(AFSK_STOP);
+	AFSK_UNLOCK();
 }
 
 static void
@@ -308,4 +331,3 @@ struct send_fsk_api afsk_api = {
 	.setup = setup_afsk,
 	.diddle = diddle_afsk
 };
-

@@ -84,33 +84,47 @@ static struct charset charsets[] = {
 	  },
 };
 
-int charset_count = sizeof(charsets) / sizeof(charsets[0]);
+const int charset_count = sizeof(charsets) / sizeof(charsets[0]);
 
 char
 asc2baudot(int asc, bool figs)
 {
+	char ret = 0;
 	char *ch = NULL;
 
+	SETTING_RLOCK();
 	asc = toupper(asc);
 	if (figs)
 		ch = memchr(charsets[settings.charset].chars + 0x20, asc, 0x20);
 	if (ch == NULL)
 		ch = memchr(charsets[settings.charset].chars, asc, 0x40);
-	if (ch == NULL)
-		return 0;
-	return ch - charsets[settings.charset].chars;
+	if (ch != NULL)
+		ret = ch - charsets[settings.charset].chars;
+	SETTING_UNLOCK();
+
+	return ret;
 }
 
 char
 baudot2asc(int baudot, bool figs)
 {
+	char ret;
+
 	if (baudot < 0 || baudot > 0x1f)
 		return 0;
-	return charsets[settings.charset].chars[baudot + figs * 0x20];
+	SETTING_RLOCK();
+	ret = charsets[settings.charset].chars[baudot + figs * 0x20];
+	SETTING_UNLOCK();
+	return ret;
 }
 
 const char *
-charset_name(int cs)
+charset_name(void)
 {
-	return charsets[cs].name;
+	const char *ret;
+
+	SETTING_RLOCK();
+	ret = charsets[settings.charset].name;
+	SETTING_UNLOCK();
+	return ret;
 }

@@ -39,7 +39,6 @@ void display_charset(const char *name);
 void audio_meter(int16_t envelope);
 void reset_tuning_aid(void);
 void clear_rx_window(void);
-void update_squelch(int level);
 void update_captured_call(const char *call);
 void update_serial(unsigned value);
 void toggle_tuning_aid();

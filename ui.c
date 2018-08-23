@@ -33,6 +33,7 @@
 #include <form.h>
 #include <inttypes.h>
 #include <math.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stddef.h>
@@ -60,6 +61,10 @@ static size_t tx_height;
 static bool reset_tuning;
 static uint64_t last_freq;
 static char last_mode[16] = "";
+static pthread_mutex_t curses_lock = PTHREAD_MUTEX_INITIALIZER;
+#define CURS_LOCK()	assert(pthread_mutex_lock(&curses_lock) == 0)
+#define CURS_UNLOCK()	assert(pthread_mutex_unlock(&curses_lock) == 0)
+static void update_captured_call_locked(const char *call);
 
 enum tuning_styles tuning_style = TUNE_ASCIINANAS;
 
@@ -78,6 +83,7 @@ static void w_printf(WINDOW *win, const char *format, ...);
 static char *unescape_config(char *str);
 static void update_waterfall(void);
 static void draw_tx_title(enum tuning_styles style);
+static void show_reverse_locked(bool rev);
 
 enum bsdtty_colors {
 	TTY_COLOR_NORMAL,
@@ -93,6 +99,7 @@ enum bsdtty_colors {
 void
 setup_curses(void)
 {
+	CURS_LOCK();
 	initscr();
 	atexit(do_endwin);
 	start_color();
@@ -131,6 +138,7 @@ setup_curses(void)
 	 */
 	mouseinterval(0);
 	typeahead(-1);
+	CURS_UNLOCK();
 }
 
 void
@@ -173,8 +181,11 @@ update_tuning_aid(double mark, double space)
 		wsamp = 0;
 	}
 
-	if (nsamp == -1)
+	if (nsamp == -1) {
+		SETTING_RLOCK();
 		nsamp = settings.dsp_rate/((((double)settings.baud_numerator / settings.baud_denominator))*7.5);
+		SETTING_UNLOCK();
+	}
 	if (buf == NULL) {
 		buf = malloc(sizeof(*buf) * nsamp * 2 + 1);
 		if (buf == NULL)
@@ -208,17 +219,22 @@ update_tuning_aid(double mark, double space)
 		 * value.
 		 */
 		if (cmaxm < maxm / 3 && cmaxs < maxs / 3) {
+			SETTING_RLOCK();
 			maxm *= 1 - ((double)nsamp / settings.dsp_rate);
 			maxs *= 1 - ((double)nsamp / settings.dsp_rate);
+			SETTING_UNLOCK();
 		}
 		cmaxm = cmaxs = 0;
 		mmult = maxm / (tx_width / 2 - 2);
 		smult = maxs / (tx_height / 2 - 2);
 		madd = tx_width / 2;
 		sadd = tx_height / 2;
+		CURS_LOCK();
 		werase(tuning_aid);
-		if (mmult == 0 || smult == 0)
+		if (mmult == 0 || smult == 0) {
+			CURS_UNLOCK();
 			return;
+		}
 		for (wsamp = 0; wsamp < nsamp; wsamp++) {
 			y = buf[wsamp*2+1] / smult + sadd;
 			x = buf[wsamp*2] / mmult + madd;
@@ -252,6 +268,7 @@ update_tuning_aid(double mark, double space)
 		}
 		wmove(tuning_aid, 0, 0);
 		wrefresh(tuning_aid);
+		CURS_UNLOCK();
 		wsamp = 0;
 	}
 }
@@ -259,6 +276,7 @@ update_tuning_aid(double mark, double space)
 void
 mark_tx_extent(bool start)
 {
+	CURS_LOCK();
 	if (start) {
 		redrawwin(tx);
 		wrefresh(tx);
@@ -269,6 +287,7 @@ mark_tx_extent(bool start)
 		redrawwin(tuning_aid);
 		draw_tx_title(tuning_style);
 	}
+	CURS_UNLOCK();
 }
 
 int
@@ -284,8 +303,10 @@ get_input(void)
 		case ERR:
 			return -1;
 		case KEY_RESIZE:
+			CURS_LOCK();
 			teardown_windows();
 			setup_windows();
+			CURS_UNLOCK();
 			return RTTY_KEY_REFRESH;
 		case KEY_BREAK:
 			return 3;
@@ -320,11 +341,13 @@ get_input(void)
 		case KEY_DOWN:
 			return RTTY_KEY_DOWN;
 		case KEY_MOUSE:
+			CURS_LOCK();
 			getmouse(&ev);
 			if (ev.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED))
 				toggle_figs(ev.y, ev.x);
 			else if (ev.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))
 				capture_call(ev.y, ev.x);
+			CURS_UNLOCK();
 			return 0;
 		default:
 			if (ret >= KEY_MIN && ret <= KEY_MAX)
@@ -336,10 +359,12 @@ get_input(void)
 void
 write_tx(char ch)
 {
+	CURS_LOCK();
 	if (ch == '\r')
 		waddch(tx, '\n');
 	waddch(tx, ch);
 	wrefresh(tx);
+	CURS_UNLOCK();
 }
 
 void
@@ -348,6 +373,7 @@ write_rx(char ch)
 	int y, x;
 	int my, mx;
 
+	CURS_LOCK();
 	getyx(rx, y, x);
 	getmaxyx(rx, my, mx);
 	switch (ch) {
@@ -367,11 +393,16 @@ write_rx(char ch)
 		case 5:
 			// Ignore Who Are You?
 			break;
+		case 0:
+		case 0x0e:
+		case 0x0f:
+			break;
 		default:
 			waddch(rx, ch);
 			break;
 	}
 	wrefresh(rx);
+	CURS_UNLOCK();
 }
 
 static void
@@ -395,9 +426,12 @@ show_freq(void)
 	get_rig_freq_mode(&freq, mode, sizeof(mode));
 	if (freq == 0)
 		return;
+	SETTING_RLOCK();
 	freq += settings.freq_offset;
+	SETTING_UNLOCK();
 	if (freq != last_freq) {
 		update = true;
+		SETTING_RLOCK();
 		switch (toupper(settings.callsign[0])) {
 			case 'A':
 				if (toupper(settings.callsign[0]) > 'L')
@@ -408,6 +442,7 @@ show_freq(void)
 				american = true;
 				break;
 		}
+		SETTING_UNLOCK();
 		if (american) {
 			if ((freq >= 135870 && freq <= 137800) ||
 			    (freq >= 472170 && freq <= 479000) ||
@@ -456,6 +491,7 @@ show_freq(void)
 		    (freq >= 3570170 && freq <= 3600000) ||
 		    (freq >= 7025170 && freq <= 7100000))
 			contest = true;
+		CURS_LOCK();
 		if (subband)
 			wcolor_set(status, TTY_COLOR_IN_SUBBAND, NULL);
 		else if (contest)
@@ -468,6 +504,8 @@ show_freq(void)
 		mvwaddstr(status, 0, 15, fstr);
 		wcolor_set(status, TTY_COLOR_NORMAL, NULL);
 	}
+	else
+		CURS_LOCK();
 	if (strcmp(mode, last_mode)) {
 		wmove(status, 0, 30);
 		w_printf(status, "%-5s", mode);
@@ -475,6 +513,7 @@ show_freq(void)
 	}
 	if (update)
 		wrefresh(status);
+	CURS_UNLOCK();
 	strcpy(last_mode, mode);
 	last_freq = freq;
 }
@@ -491,10 +530,12 @@ check_input(void)
 	typeahead(-1);
 	if (ch == KEY_MOUSE) {
 		getmouse(&ev);
+		CURS_LOCK();
 		if (ev.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED))
 			toggle_figs(ev.y, ev.x);
 		else if (ev.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))
 			capture_call(ev.y, ev.x);
+		CURS_UNLOCK();
 		return check_input();	// TODO: Recusion!  Mah stack!
 	}
 	if (ch == 0x0c) {
@@ -629,14 +670,14 @@ setup_windows(void)
 	wrefresh(rx);
 	wrefresh(tx);
 	draw_tx_title(tuning_style);
-	wtimeout(tx, 0);
-	wtimeout(tuning_aid, 0);
-	wtimeout(rx, 0);
+	wtimeout(tx, 160);
+	wtimeout(tuning_aid, 160);
+	wtimeout(rx, 160);
 	wtimeout(stdscr, -1);
 	keypad(rx, TRUE);
 	keypad(tx, TRUE);
 	keypad(tuning_aid, TRUE);
-	show_reverse(reverse);
+	show_reverse_locked(reverse);
 	leaveok(tuning_aid, TRUE);
 	leaveok(status, TRUE);
 }
@@ -678,11 +719,19 @@ do_endwin(void)
 	endwin();
 }
 
-void
-show_reverse(bool rev)
+static void
+show_reverse_locked(bool rev)
 {
 	mvwaddstr(status, 0, 1, rev ? "REV" : "   ");
 	wrefresh(status);
+}
+
+void
+show_reverse(bool rev)
+{
+	CURS_LOCK();
+	show_reverse_locked(rev);
+	CURS_UNLOCK();
 }
 
 struct field_info {
@@ -933,6 +982,8 @@ change_settings(void)
 	size_t ffy, ffx;
 	int keywidth = 18;
 
+	CURS_LOCK();
+	SETTING_RLOCK();
 	baudot = new_fieldtype(NULL, baudot_char);
 	baudot_macro = new_fieldtype(NULL, baudot_macro_char);
 	curs_set(1);
@@ -1112,8 +1163,11 @@ done:
 			}
 		}
 		fclose(config);
+		SETTING_UNLOCK();
 		reinit();
 	}
+	else
+		SETTING_UNLOCK();
 
 	free_form(frm);
 
@@ -1140,6 +1194,7 @@ done:
 		wrefresh(tx);
 	else
 		wrefresh(tuning_aid);
+	CURS_UNLOCK();
 }
 
 static bool
@@ -1316,8 +1371,10 @@ display_charset(const char *name)
 	char padded[8];
 
 	snprintf(padded, sizeof(padded), "%-11s", name);
+	CURS_LOCK();
 	mvwaddstr(status, 0, 6, padded);
 	wrefresh(status);
+	CURS_UNLOCK();
 }
 
 void
@@ -1340,6 +1397,7 @@ audio_meter(int16_t envelope)
 	if (blocks == lastb)
 		return;
 	lastb = blocks;
+	CURS_LOCK();
 	wmove(status, 0, 66);
 	wclrtoeol(status);
 	wcolor_set(status, TTY_COLOR_GREEN_VU, NULL);
@@ -1354,6 +1412,7 @@ audio_meter(int16_t envelope)
 	wcolor_set(status, TTY_COLOR_NORMAL, NULL);
 	wattroff(status, A_BOLD);
 	wrefresh(status);
+	CURS_UNLOCK();
 }
 
 static bool
@@ -1439,15 +1498,15 @@ capture_call(int y, int x)
 	}
 done:
 	*c = 0;
-	update_captured_call(captured);
+	update_captured_call_locked(captured);
 	captured_callsign(captured);
 
 	wmove(rx, iy, ix);
 	wrefresh(rx);
 }
 
-void
-update_captured_call(const char *call)
+static void
+update_captured_call_locked(const char *call)
 {
 	char captured[16];
 
@@ -1457,6 +1516,14 @@ update_captured_call(const char *call)
 		sprintf(captured, "%-15s", call);
 	mvwaddstr(status, 0, 35, captured);
 	wrefresh(status);
+}
+
+void
+update_captured_call(const char *call)
+{
+	CURS_LOCK();
+	update_captured_call_locked(call);
+	CURS_UNLOCK();
 }
 
 static void
@@ -1518,21 +1585,11 @@ toggle_figs(int y, int x)
 void
 clear_rx_window(void)
 {
+	CURS_LOCK();
 	werase(rx);
 	wmove(rx, 0, 0);
 	wrefresh(rx);
-}
-
-void
-update_squelch(int level)
-{
-	char buf[6];
-
-	if (level > 9)
-		return;
-	sprintf(buf, "SQL %d", level);
-	mvwaddstr(status, 0, 51, buf);
-	wrefresh(status);
+	CURS_UNLOCK();
 }
 
 void
@@ -1541,8 +1598,10 @@ update_serial(unsigned value)
 	char buf[11];
 
 	sprintf(buf, "%03u", value);
+	CURS_LOCK();
 	mvwaddstr(status, 0, 58, buf);
 	wrefresh(status);
+	CURS_UNLOCK();
 }
 
 static void
@@ -1576,6 +1635,7 @@ update_waterfall(void)
 	}
 	if (diff.tv_sec <= 0 && diff.tv_nsec < 100000000)
 		return;
+	CURS_LOCK();
 	scroll(tuning_aid);
 	last = now;
 	for (i = 0; i < tx_width; i++) {
@@ -1587,9 +1647,12 @@ update_waterfall(void)
 	}
 	for (i = 0; i < tx_width; i++)
 		mvwaddch(tuning_aid, tx_height - 2, i, chars[(int)((get_waterfall(i) - min) / ((max - min) / (sizeof(chars) - 1)))]);
+	SETTING_RLOCK();
 	mvwaddch(tuning_aid, tx_height - 1, settings.mark_freq / d, ACS_VLINE);
 	mvwaddch(tuning_aid, tx_height - 1, settings.space_freq / d, ACS_VLINE);
+	SETTING_UNLOCK();
 	wrefresh(tuning_aid);
+	CURS_UNLOCK();
 }
 
 void
@@ -1599,6 +1662,7 @@ toggle_tuning_aid()
 	if (tuning_style > TUNE_LAST)
 		tuning_style = TUNE_NONE;
 
+	CURS_LOCK();
 	draw_tx_title(tuning_style);
 
 	switch (tuning_style) {
@@ -1613,11 +1677,14 @@ toggle_tuning_aid()
 			setup_spectrum_filters(tx_width);
 			break;
 	}
+	CURS_UNLOCK();
 }
 
 void
 debug_status(int y, int x, char *str)
 {
+	CURS_LOCK();
 	mvwaddstr(status, y, x, str);
 	wrefresh(status);
+	CURS_UNLOCK();
 }

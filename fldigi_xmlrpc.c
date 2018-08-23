@@ -41,6 +41,8 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <netdb.h>
+#include <pthread.h>
+#include <pthread_np.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -56,8 +58,8 @@ static int *lsocks;
 static size_t nlsocks;
 static int *csocks;
 static size_t ncsocks;
-static fd_set rcsocks;
-static int mcsocks;
+static fd_set rsocks;
+static int msocks;
 static char *tx_buffer;
 static size_t tx_bufsz;
 static size_t tx_buflen;
@@ -79,9 +81,16 @@ static void send_xmlrpc_fault(int sock);
 static void send_xmlrpc_response(int sock, char *type, char *value);
 static int xr_sock_readbuf(int *sock, char **buf, size_t *bufsz, unsigned long len);
 static int xr_sock_readln(int *sock, char *buf, size_t bufsz);
+static void * xmlrpc_thread(void *arg);
+static void handle_xmlrpc(void);
+static void close_sockets(void *arg);
+
+static pthread_mutex_t rxbuf_mutex = PTHREAD_MUTEX_INITIALIZER;
+#define RXBUF_LOCK()	assert(pthread_mutex_lock(&rxbuf_mutex) == 0)
+#define RXBUF_UNLOCK()	assert(pthread_mutex_unlock(&rxbuf_mutex) == 0)
 
 void
-setup_xmlrpc(void)
+setup_xmlrpc(pthread_t *tid)
 {
 	struct addrinfo hints = {
 		.ai_family = AF_UNSPEC,
@@ -98,14 +107,22 @@ setup_xmlrpc(void)
 	char hostname[256];
 	int opt;
 
-	FD_ZERO(&rcsocks);
-	if (settings.xmlrpc_host == NULL || settings.xmlrpc_host[0] == 0)
+	FD_ZERO(&rsocks);
+	SETTING_RLOCK();
+	if (settings.xmlrpc_host == NULL || settings.xmlrpc_host[0] == 0) {
+		SETTING_UNLOCK();
 		return;
-	if (settings.xmlrpc_port == 0)
+	}
+	if (settings.xmlrpc_port == 0) {
+		SETTING_UNLOCK();
 		return;
+	}
 	sprintf(port, "%hu", settings.xmlrpc_port);
-	if (getaddrinfo(settings.xmlrpc_host, port, &hints, &ai) != 0)
+	if (getaddrinfo(settings.xmlrpc_host, port, &hints, &ai) != 0) {
+		SETTING_UNLOCK();
 		return;
+	}
+	SETTING_UNLOCK();
 	for (aip = ai; aip != NULL; aip = aip->ai_next) {
 		sock = socket(aip->ai_family, aip->ai_socktype, aip->ai_protocol);
 		if (sock == -1)
@@ -125,6 +142,9 @@ setup_xmlrpc(void)
 					else {
 						lsocks = tmp;
 						lsocks[nlsocks - 1] = sock;
+						FD_SET(sock, &rsocks);
+						if (sock > msocks)
+							msocks = sock;
 					}
 				}
 				else
@@ -134,7 +154,7 @@ setup_xmlrpc(void)
 			else {
 				if (errno == EADDRINUSE) {
 					if (getnameinfo(aip->ai_addr, aip->ai_addrlen, hostname, sizeof(hostname), NULL, 0, 0) == 0) {
-						fprintf(stderr, "Address %s:%" PRIu16 " is in use... will retry unless you hit CTRL-C\n", hostname, settings.xmlrpc_port);
+						fprintf(stderr, "Address %s:%s is in use... will retry unless you hit CTRL-C\n", hostname, port);
 						sleep(1);
 						continue;
 					}
@@ -148,19 +168,20 @@ setup_xmlrpc(void)
 		}
 	}
 	freeaddrinfo(ai);
+	pthread_create(tid, NULL, xmlrpc_thread, NULL);
 }
 
 /*
  * Currently, this assumes that the entire request will be available and that
  * the entire response can be written.
  */
-void
+static void
 handle_xmlrpc(void)
 {
 	fd_set rfds;
 	size_t i;
 	struct timeval tv = {
-		.tv_sec = 0,
+		.tv_sec = 1,
 		.tv_usec = 0
 	};
 	struct sockaddr sa;
@@ -168,41 +189,56 @@ handle_xmlrpc(void)
 	int sock;
 	int *tmp;
 	int opt;
+	int count = 0;
 
-	/* First, service listening sockets */
-	for (i = 0; i < nlsocks; i++) {
-		sock = accept(lsocks[i], &sa, &salen);
-		if (sock != -1) {
-			ncsocks++;
-			tmp = realloc(csocks, sizeof(*csocks) * ncsocks);
-			if (tmp == NULL)
-				close(sock);
-			else {
-				csocks = tmp;
-				csocks[ncsocks - 1] = sock;
-				if (sock > mcsocks)
-					mcsocks = sock;
-				FD_SET(sock, &rcsocks);
-				opt = 1;
-				setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
-			}
-		}
+	rfds = rsocks;
+	switch (count = select(msocks + 1, &rfds, NULL, NULL, &tv)) {
+		case -1:
+			if (errno != EINTR)
+				printf_errno("selecting xmlrpc");
+			return;
+		case 0:
+			return;
 	}
 
 	/* Now service connected sockets */
-	if (ncsocks > 0) {
-		rfds = rcsocks;
-		if (select(mcsocks + 1, &rfds, NULL, NULL, &tv) > 0) {
-			for (i = 0; i < ncsocks; i++) {
-				if (FD_ISSET(csocks[i], &rfds)) {
-					if (!handle_request(i)) {
-						remove_sock(csocks, &ncsocks, &rcsocks, &mcsocks, i);
-						i--;
-					}
-				}
+	for (i = 0; i < ncsocks; i++) {
+		if (FD_ISSET(csocks[i], &rfds)) {
+			if (!handle_request(i)) {
+				remove_sock(csocks, &ncsocks, &rsocks, &msocks, i);
+				i--;
 			}
+			if (--count == 0)
+				return;
 		}
 	}
+
+	/* Now, service listening sockets */
+	for (i = 0; i < nlsocks; i++) {
+		if (FD_ISSET(lsocks[i], &rfds)) {
+			sock = accept(lsocks[i], &sa, &salen);
+			if (sock == -1)
+				remove_sock(lsocks, &nlsocks, &rsocks, &msocks, i);
+			else {
+				ncsocks++;
+				tmp = realloc(csocks, sizeof(*csocks) * ncsocks);
+				if (tmp == NULL)
+					close(sock);
+				else {
+					csocks = tmp;
+					csocks[ncsocks - 1] = sock;
+					if (sock > msocks)
+						msocks = sock;
+					FD_SET(sock, &rsocks);
+					opt = 1;
+					setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+				}
+			}
+			if (--count == 0)
+				return;
+		}
+	}
+
 }
 
 /*
@@ -286,15 +322,25 @@ handle_request(int si)
 
 	/* Now handle the command */
 	if (strcmp(cmd, "main.rx") == 0) {
-		if (get_rig_ptt())
-			send_string("\t");
+		RTS_RLOCK();
+		if (rts) {
+			RTS_UNLOCK();
+			send_string(strdup("\t"));
+		}
+		else
+			RTS_UNLOCK();
 		send_xmlrpc_response(csocks[si], NULL, NULL);
 	}
 	else if (strcmp(cmd, "main.get_trx_state") == 0) {
-		if (get_rig_ptt())
+		RTS_RLOCK();
+		if (rts) {
+			RTS_UNLOCK();
 			send_xmlrpc_response(csocks[si], "string", "TX");
-		else
+		}
+		else {
+			RTS_UNLOCK();
 			send_xmlrpc_response(csocks[si], "string", "RX");
+		}
 	}
 	else if (strcmp(cmd, "text.clear_tx") == 0) {
 		send_xmlrpc_response(csocks[si], NULL, NULL);
@@ -309,11 +355,14 @@ handle_request(int si)
 	else if (strcmp(cmd, "main.tx") == 0) {
 		send_xmlrpc_response(csocks[si], NULL, NULL);
 		send_string(tx_buffer);
+		tx_buffer = NULL;
+		tx_bufsz = 0;
 		tx_buflen = 0;
-		tx_buffer[0] = 0;
 	}
 	else if (strcmp(cmd, "text.get_rx_length") == 0) {
+		RXBUF_LOCK();
 		sprintf(buf, "%zu", rx_offset + rx_buflen);
+		RXBUF_UNLOCK();
 		send_xmlrpc_response(csocks[si], "int", buf);
 	}
 	else if (strcmp(cmd, "text.get_rx") == 0) {
@@ -326,6 +375,7 @@ handle_request(int si)
 		 * Unfortuantely, we're throwing away the rx buffer as
 		 * soon as we send it, so we need to respect this.
 		 */
+		RXBUF_LOCK();
 		if (len > rx_buflen + rx_offset - start)
 			len = start - len;
 		if (rx_offset <= start) {
@@ -341,14 +391,19 @@ handle_request(int si)
 		}
 		else
 			printf_errno("invalid rxbuf request offset (%ld:%ld from %zu:%zu)", start, len, rx_offset, rx_offset + rx_buflen);
+		RXBUF_UNLOCK();
 	}
 	else if (strcmp(cmd, "modem.get_carrier") == 0) {
+		SETTING_RLOCK();
 		sprintf(buf, "%d", (int)((settings.mark_freq + settings.space_freq) / 2));
+		SETTING_UNLOCK();
 		send_xmlrpc_response(csocks[si], "int", buf);
 	}
 	else if (strcmp(cmd, "modem.set_carrier") == 0) {
 		// TODO?
+		SETTING_RLOCK();
 		sprintf(buf, "%d", (int)((settings.mark_freq + settings.space_freq) / 2));
+		SETTING_UNLOCK();
 		send_xmlrpc_response(csocks[si], "int", buf);
 	}
 	/* The rest are for completeness... */
@@ -380,38 +435,52 @@ handle_request(int si)
 			send_xmlrpc_response(csocks[si], "string", "0");
 	}
 	else if (strcmp(cmd, "modem.get_reverse") == 0) {
+		BSDTTY_LOCK();
 		sprintf(buf, "%d", reverse);
+		BSDTTY_UNLOCK();
 		send_xmlrpc_response(csocks[si], "boolean", buf);
 	}
 	else if (strcmp(cmd, "modem.set_reverse") == 0) {
+		BSDTTY_LOCK();
 		sprintf(buf, "%d", reverse);
 		if (atoi(req_buffer) != reverse) {
 			toggle_reverse(&reverse);
 			send_fsk->toggle_reverse();
 		}
+		BSDTTY_UNLOCK();
 		send_xmlrpc_response(csocks[si], "boolean", buf);
 	}
 	else if (strcmp(cmd, "modem.toggle_reverse") == 0) {
+		BSDTTY_LOCK();
 		toggle_reverse(&reverse);
 		send_fsk->toggle_reverse();
 		sprintf(buf, "%d", reverse);
+		BSDTTY_UNLOCK();
 		send_xmlrpc_response(csocks[si], "boolean", buf);
 	}
 	else if (strcmp(cmd, "modem.run_macro") == 0) {
 		uret = strtoui(req_buffer, NULL, 10);
+		SETTING_RLOCK();
 		if (uret < sizeof(settings.macros) / sizeof(*settings.macros)) {
+			SETTING_UNLOCK();
 			send_xmlrpc_response(csocks[si], NULL, NULL);
 			do_macro(uret + 1);
 		}
-		else
+		else {
+			SETTING_UNLOCK();
 			send_xmlrpc_fault(csocks[si]);
+		}
 	}
 	else if (strcmp(cmd, "modem.get_max_macro_id") == 0) {
+		SETTING_RLOCK();
 		sprintf(buf, "%zu", sizeof(settings.macros) / sizeof(*settings.macros) - 1);
+		SETTING_UNLOCK();
 		send_xmlrpc_response(csocks[si], "int", buf);
 	}
 	else if (strcmp(cmd, "log.get_serial_number_sent") == 0) {
+		BSDTTY_LOCK();
 		sprintf(buf, "%03d", serial);
+		BSDTTY_UNLOCK();
 		send_xmlrpc_response(csocks[si], "string", buf);
 	}
 	else if (strcmp(cmd, "log.set_call") == 0) {
@@ -798,11 +867,16 @@ add_tx(const char *str)
 	}
 	*b = 0;
 	tx_buflen = b - tx_buffer;
-	if (get_rig_ptt()) {
+	RTS_RLOCK();
+	if (rts) {
+		RTS_UNLOCK();
 		send_string(tx_buffer);
+		tx_buffer = NULL;
+		tx_bufsz = 0;
 		tx_buflen = 0;
-		tx_buffer[0] = 0;
 	}
+	else
+		RTS_UNLOCK();
 }
 
 void
@@ -813,10 +887,13 @@ fldigi_add_rx(char ch)
 	if (ncsocks == 0 && nlsocks == 0)
 		return;
 
+	RXBUF_LOCK();
 	if (rx_buflen + 1 >= rx_bufsz) {
 		tmp = realloc(rx_buffer, rx_bufsz ? rx_bufsz * 2 : 128);
-		if (tmp == NULL)
+		if (tmp == NULL) {
+			RXBUF_UNLOCK();
 			return;
+		}
 		rx_buffer = tmp;
 		rx_bufsz = rx_bufsz ? rx_bufsz * 2 : 128;
 	}
@@ -825,6 +902,7 @@ fldigi_add_rx(char ch)
 	*(tmp++) = ch;
 	*tmp = 0;
 	rx_buflen++;
+	RXBUF_UNLOCK();
 }
 
 static int
@@ -931,14 +1009,34 @@ send_xmlrpc_fault(int sock)
 	send(sock, buf, strlen(buf), 0);
 }
 
-void
-close_sockets(void)
+static void
+close_sockets(void *arg)
 {
+	(void)arg;
+
 	/* First, close listening sockets */
 	while (nlsocks)
-		remove_sock(lsocks, &nlsocks, NULL, NULL, 0);
+		remove_sock(lsocks, &nlsocks, &rsocks, &msocks, 0);
 
 	/* Now close connected sockets */
 	while (ncsocks)
-		remove_sock(csocks, &ncsocks, &rcsocks, &mcsocks, 0);
+		remove_sock(csocks, &ncsocks, &rsocks, &msocks, 0);
+}
+
+static void *
+xmlrpc_thread(void *arg)
+{
+	(void)arg;
+
+	pthread_set_name_np(pthread_self(), "XML-RPC");
+	pthread_cleanup_push(close_sockets, NULL);
+
+	for (;;) {
+		handle_xmlrpc();
+		pthread_testcancel();
+	}
+
+	pthread_cleanup_pop(true);
+
+	return NULL;
 }

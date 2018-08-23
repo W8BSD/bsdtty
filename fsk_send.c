@@ -36,6 +36,9 @@
 #include "ui.h"
 
 static int fsk_tty = -1;
+static pthread_mutex_t fsk_mutex = PTHREAD_MUTEX_INITIALIZER;
+#define FSK_LOCK() pthread_mutex_lock(&fsk_mutex);
+#define FSK_UNLOCK() pthread_mutex_unlock(&fsk_mutex);
 
 static void
 fsk_toggle_reverse(void)
@@ -46,23 +49,39 @@ fsk_toggle_reverse(void)
 static void
 end_fsk_tx(void)
 {
+	useconds_t sl;
+
+	FSK_LOCK();
 	ioctl(fsk_tty, TIOCDRAIN);
 	// Space still gets cut off... wait one char
-	usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
+	SETTING_RLOCK();
+	sl = ((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000;
+	SETTING_UNLOCK();
+	usleep(sl);
+	FSK_UNLOCK();
 }
 
 static void
 send_fsk_preamble(void)
 {
+	useconds_t sl;
+	
 	/* Hold it in mark for 1 byte time. */
-	usleep(((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000);
+	FSK_LOCK();
+	SETTING_RLOCK();
+	sl = ((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000;
+	SETTING_UNLOCK();
+	usleep(sl);
+	FSK_UNLOCK();
 }
 
 static void
 send_fsk_char(char ch)
 {
+	FSK_LOCK();
 	if (write(fsk_tty, &ch, 1) != 1)
 		printf_errno("error sending FIGS/LTRS");
+	FSK_UNLOCK();
 }
 
 static void
@@ -74,9 +93,11 @@ setup_fsk(void)
 	struct baud_fraction bf;
 #endif
 
+	FSK_LOCK();
 	// Set up the UART
 	if (fsk_tty != -1)
 		close(fsk_tty);
+	SETTING_RLOCK();
 	fsk_tty = open(settings.tty_name, O_RDWR|O_DIRECT|O_NONBLOCK);
 	if (fsk_tty == -1)
 		printf_errno("unable to open %s");
@@ -120,6 +141,8 @@ setup_fsk(void)
 	ioctl(fsk_tty, TIOCSFBAUD, &bf);
 	ioctl(fsk_tty, TIOCGFBAUD, &bf);
 #endif
+	SETTING_UNLOCK();
+	FSK_UNLOCK();
 }
 
 static void

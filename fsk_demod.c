@@ -35,12 +35,16 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <math.h>
+#include <pthread.h>
+#include <pthread_np.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
+#include "baudot.h"
 #include "bsdtty.h"
 #include "fsk_demod.h"
 #include "ui.h"
@@ -79,6 +83,7 @@ static float snsamp;
 // Audio meter filter
 static struct bq_filter *afilt;
 // Hunt for Start
+static _Atomic(bool) hfs = ATOMIC_VAR_INIT(false);
 static double *hfs_buf;
 static size_t hfs_bufmax;
 static size_t hfs_head;
@@ -98,6 +103,9 @@ static int dsp_channels = 1;
 static struct bq_filter **waterfall_bp;
 static struct bq_filter **waterfall_lp;
 size_t waterfall_width;
+static pthread_mutex_t waterfall_mutex = PTHREAD_MUTEX_INITIALIZER;
+#define WF_LOCK()	assert(pthread_mutex_lock(&waterfall_mutex) == 0)
+#define WF_UNLOCK()	assert(pthread_mutex_unlock(&waterfall_mutex) == 0)
 
 #if 0 // suppress warning
 static int avail(int head, int tail, int max);
@@ -112,7 +120,7 @@ static void free_bq_filter(struct bq_filter *f);
 static void free_fir_filter(struct fir_filter *f);
 static bool get_bit(void);
 static bool get_stop_bit(void);
-static int next(int val, int max);
+static size_t next(int val, int max);
 #if 0 // suppress warning
 static int prev(int val, int max);
 #endif
@@ -121,16 +129,39 @@ static void setup_audio(void);
 static struct fir_filter * create_matched_filter(double frequency);
 static double fir_filter(int16_t value, struct fir_filter *f);
 static void feed_waterfall(int16_t value);
+static int read_rtty_ch(int state);
+static void * rx_thread(void *arg);
+
+static char chbuf[256];
+static size_t chh;
+static size_t cht;
+pthread_mutex_t chbuf_mutex = PTHREAD_MUTEX_INITIALIZER;
+#define CH_LOCK()	assert(pthread_mutex_lock(&chbuf_mutex) == 0)
+#define CH_UNLOCK()	assert(pthread_mutex_unlock(&chbuf_mutex) == 0)
+static bool rxfigs;
+pthread_mutex_t rx_lock = PTHREAD_MUTEX_INITIALIZER;
 
 void
-setup_rx(void)
+setup_rx(pthread_t *tid)
 {
 	int hfs_buflen;
 
 	setup_audio();
 
+	SETTING_RLOCK();
 	phase_rate = 1/((double)settings.dsp_rate/((double)settings.baud_numerator / settings.baud_denominator));
 	hfs_buflen = ((double)settings.dsp_rate/((double)settings.baud_numerator / settings.baud_denominator)) * 7.1 + 1;
+	hfs_tail = 0;
+	hfs_head = 0;
+	hfs_start = ((1/phase_rate)*.5);
+	hfs_b0 = ((1/phase_rate)*1.5);
+	hfs_b1 = ((1/phase_rate)*2.5);
+	hfs_b2 = ((1/phase_rate)*3.5);
+	hfs_b3 = ((1/phase_rate)*4.5);
+	hfs_b4 = ((1/phase_rate)*5.5);
+	hfs_stop1 = ((1/phase_rate)*6.5);
+	hfs_stop2 = hfs_bufmax;
+	SETTING_UNLOCK();
 	if (hfs_buf)
 		free(hfs_buf);
 	hfs_buf = malloc(hfs_buflen*sizeof(double));
@@ -138,10 +169,11 @@ setup_rx(void)
 		printf_errno("allocating dsp buffer");
 	hfs_bufmax = hfs_buflen - 1;
 	create_filters();
+	pthread_create(tid, NULL, rx_thread, NULL);
 }
 
-int
-get_rtty_ch(int state)
+static int
+read_rtty_ch(int state)
 {
 	bool b;
 	int i;
@@ -159,14 +191,20 @@ get_rtty_ch(int state)
 		 * If it doesn't start, go to "hunt for start" mode.
 		 */
 		for (phase = 0;;) {
-			if (current_value() < 0.0)
+			if (current_value() < 0.0 || hfs_head == hfs_tail)
 				break;
 			phase += phase_rate;
-			if (phase >= 1.6)
-				return -1;
+			if (phase >= 1.6) {
+				state = -1;
+				rxfigs = false;
+				atomic_store(&hfs, true);
+				break;
+			}
 		}
 	}
-	else if (state == -1) {
+	if (hfs_head == hfs_tail)
+		state = -1;
+	if (state < 0) {
 		/*
 		 * Start of "Hunt for Start" mode... this one is fun
 		 * since it looks for a whole character rather than
@@ -177,30 +215,18 @@ get_rtty_ch(int state)
 		 * If we do, we return THAT character, and assume
 		 * synchronization.
 		 */
-		hfs_tail = 0;
-		for (hfs_head = 0; hfs_head <= hfs_bufmax; hfs_head++) {
-#ifdef NOISE_CORRECT
-			mnoise = snoise = 0.0;	// No noise if no signal...
-#endif
-			hfs_buf[hfs_head] = current_value();
-		}
-		hfs_head = hfs_bufmax;
-		hfs_start = ((1/phase_rate)*.5);
-		hfs_b0 = ((1/phase_rate)*1.5);
-		hfs_b1 = ((1/phase_rate)*2.5);
-		hfs_b2 = ((1/phase_rate)*3.5);
-		hfs_b3 = ((1/phase_rate)*4.5);
-		hfs_b4 = ((1/phase_rate)*5.5);
-		hfs_stop1 = ((1/phase_rate)*6.5);
-		hfs_stop2 = hfs_bufmax;
-		return -2;
-	}
-	else {
+
 		/*
 		 * Now we're in HfS mode
 		 * First, check the existing buffer.
 		 */
-		do {
+#ifdef NOISE_CORRECT
+		mnoise = snoise = 0.0;	// No noise if no signal...
+#endif
+		for (;;) {
+			// Fill up the ring buffer...
+			while (next(hfs_head, hfs_bufmax) != hfs_tail)
+				current_value();
 			if (hfs_buf[hfs_tail] >= 0.0 && hfs_buf[next(hfs_tail, hfs_bufmax)] < 0.0) {
 				/* If there's a valid character in there, return it. */
 				if (hfs_buf[hfs_start] < 0.0 &&
@@ -211,6 +237,8 @@ get_rtty_ch(int state)
 					 * With NOISE_CORRECT, it would be nice to have initial
 					 * noise levels here for the second character.
 					 */
+					hfs_tail = hfs_head;
+					atomic_store(&hfs, false);
 					return (hfs_buf[hfs_b0] > 0.0) |
 						((hfs_buf[hfs_b1] > 0.0) << 1) |
 						((hfs_buf[hfs_b2] > 0.0) << 2) |
@@ -218,24 +246,8 @@ get_rtty_ch(int state)
 						((hfs_buf[hfs_b4] > 0.0) << 4);
 				}
 			}
-
-			/* Now update it and stay in HfS. */
-			hfs_buf[hfs_head] = current_value();
-#ifdef NOISE_CORRECT
-			mnoise = snoise = 0.0;	// No noise if no signal...
-#endif
-			hfs_head = next(hfs_head, hfs_bufmax);
-			hfs_tail = next(hfs_tail, hfs_bufmax);
-			hfs_start = next(hfs_start, hfs_bufmax);
-			hfs_b0 = next(hfs_b0, hfs_bufmax);
-			hfs_b1 = next(hfs_b1, hfs_bufmax);
-			hfs_b2 = next(hfs_b2, hfs_bufmax);
-			hfs_b3 = next(hfs_b3, hfs_bufmax);
-			hfs_b4 = next(hfs_b4, hfs_bufmax);
-			hfs_stop1 = next(hfs_stop1, hfs_bufmax);
-			hfs_stop2 = next(hfs_stop2, hfs_bufmax);
-		} while (hfs_tail);
-		return -2;
+			current_value();
+		}
 	}
 
 	/*
@@ -244,12 +256,16 @@ get_rtty_ch(int state)
 	 */
 	phase = phase_rate;
 	b = get_bit();
+	if (hfs_head == hfs_tail)
+		return -1;
 	if (b)
 		return -1;
 
 	/* Now read the five data bits */
 	for (i = 0; i < 5; i++) {
 		b = get_bit();
+		if (hfs_head == hfs_tail)
+			return -1;
 		ret |= b << i;
 	}
 
@@ -259,6 +275,9 @@ get_rtty_ch(int state)
 	 */
 	if (!get_stop_bit())
 		return -1;
+	if (hfs_head == hfs_tail)
+		return -1;
+	hfs_tail = hfs_head;
 
 	return ret;
 }
@@ -270,6 +289,7 @@ setup_audio(void)
 
 	if (dsp != -1)
 		close(dsp);
+	SETTING_WLOCK();
 	dsp = open(settings.dsp_name, O_RDONLY);
 	if (dsp == -1)
 		printf_errno("unable to open sound device");
@@ -282,6 +302,7 @@ setup_audio(void)
 		printf_errno("setting mono");
 	if (ioctl(dsp, SNDCTL_DSP_SPEED, &settings.dsp_rate) == -1)
 		printf_errno("setting sample rate");
+	SETTING_UNLOCK();
 }
 
 /*
@@ -297,6 +318,8 @@ get_bit(void)
 	for (nsamp = 0; phase < 1.03; phase += phase_rate) {
 		/* We only sample in the middle of the phase */
 		cv = current_value();
+		if (next(hfs_head, hfs_bufmax) != hfs_tail)
+			return false;
 		if (phase > 0.5 && nsamp == 0) {
 			tot = cv;
 #ifdef NOISE_CORRECT
@@ -333,6 +356,8 @@ get_stop_bit(void)
 
 	for (nsamp = 0; phase < 1.42; phase += phase_rate) {
 		cv = current_value();
+		if (hfs_head == hfs_tail)
+			return false;
 		if (phase > 0.5 && nsamp == 0) {
 			ret = cv >= 0.0;
 			nsamp++;
@@ -388,6 +413,10 @@ current_value(void)
 	double mv, emv, sv, esv, cv, a;
 	float mns, sns;
 
+	if (pthread_mutex_trylock(&rx_lock) != 0) {
+		RX_LOCK();
+		hfs_tail = hfs_head;
+	}
 	sample = read_audio();
 
 	mv = fir_filter(sample, mfilt);
@@ -404,6 +433,7 @@ current_value(void)
 	update_tuning_aid(mv, sv);
 	a = bq_filter((double)sample * sample, afilt);
 	audio_meter((int16_t)sqrt(a));
+	RX_UNLOCK();
 
 	/*
 	 * TODO: A variable decision threshold may help out... essentially,
@@ -423,6 +453,18 @@ current_value(void)
 	cv = emv - esv;
 
 	/* Return the current value */
+	hfs_buf[hfs_head] = cv;
+	hfs_head = next(hfs_head, hfs_bufmax);
+	if (hfs_head == hfs_tail)
+		hfs_tail = next(hfs_tail, hfs_bufmax);
+	hfs_start = next(hfs_start, hfs_bufmax);
+	hfs_b0 = next(hfs_b0, hfs_bufmax);
+	hfs_b1 = next(hfs_b1, hfs_bufmax);
+	hfs_b2 = next(hfs_b2, hfs_bufmax);
+	hfs_b3 = next(hfs_b3, hfs_bufmax);
+	hfs_b4 = next(hfs_b4, hfs_bufmax);
+	hfs_stop1 = next(hfs_stop1, hfs_bufmax);
+	hfs_stop2 = next(hfs_stop2, hfs_bufmax);
 	return cv;
 }
 
@@ -432,6 +474,7 @@ create_filters(void)
 {
 	free_fir_filter(mfilt);
 	free_fir_filter(sfilt);
+	SETTING_RLOCK();
 	mfilt = create_matched_filter(settings.mark_freq);
 	sfilt = create_matched_filter(settings.space_freq);
 
@@ -456,6 +499,7 @@ create_filters(void)
 	free_bq_filter(sapfilt);
 	mapfilt = calc_apf_coef(settings.mark_freq / 1.75, 1);
 	sapfilt = calc_apf_coef(settings.space_freq * 1.75, 1);
+	SETTING_UNLOCK();
 
 	/* For the audio level meter */
 	free_bq_filter(afilt);
@@ -472,7 +516,9 @@ calc_lpf_coef(double f0, double q)
 	if (ret == NULL)
 		printf_errno("allocating bpf");
 
+	SETTING_RLOCK();
 	w0 = 2.0 * M_PI * (f0 / settings.dsp_rate);
+	SETTING_UNLOCK();
 	cw0 = cos(w0);
 	sw0 = sin(w0);
 
@@ -506,7 +552,9 @@ calc_bpf_coef(double f0, double q)
 	if (ret == NULL)
 		printf_errno("allocating bpf");
 
+	SETTING_RLOCK();
 	w0 = 2.0 * M_PI * (f0 / settings.dsp_rate);
+	SETTING_UNLOCK();
 	cw0 = cos(w0);
 	sw0 = sin(w0);
 	alpha = sw0 / (2.0 * q);
@@ -541,7 +589,9 @@ calc_apf_coef(double f0, double q)
 	if (ret == NULL)
 		printf_errno("allocating bpf");
 
+	SETTING_RLOCK();
 	w0 = 2.0 * M_PI * (f0 / settings.dsp_rate);
+	SETTING_UNLOCK();
 	cw0 = cos(w0);
 	sw0 = sin(w0);
 	alpha = sw0 / (2.0 * q);
@@ -611,8 +661,10 @@ create_matched_filter(double frequency)
 	 * For the given sample rate, calculate the number of
 	 * samples in a complete wave
 	 */
+	SETTING_RLOCK();
 	ret->len = settings.dsp_rate / ((double)settings.baud_numerator / settings.baud_denominator) / 2;
 	wavelen = settings.dsp_rate / frequency;
+	SETTING_UNLOCK();
 
 	ret->buf = calloc(sizeof(*ret->buf), ret->len);
 	if (ret == NULL)
@@ -652,7 +704,7 @@ prev(int val, int max)
 }
 #endif
 
-static int
+static size_t
 next(int val, int max)
 {
 	if (++val > max)
@@ -711,6 +763,7 @@ setup_spectrum_filters(size_t buckets)
 	double freq;
 	double q;
 
+	WF_LOCK();
 	if (waterfall_bp) {
 		for (i = 0; i < waterfall_width; i++) {
 			if (waterfall_bp[i])
@@ -728,17 +781,21 @@ setup_spectrum_filters(size_t buckets)
 		waterfall_lp = NULL;
 	}
 	waterfall_width = 0;
-	if (buckets == 0)
+	if (buckets == 0) {
+		WF_UNLOCK();
 		return;
+	}
 	waterfall_bp = calloc(sizeof(*waterfall_bp), buckets);
 	if (waterfall_bp == NULL) {
 		waterfall_width = 0;
+		WF_UNLOCK();
 		return;
 	}
 	waterfall_lp = calloc(sizeof(*waterfall_lp), buckets);
 	if (waterfall_lp == NULL) {
 		free(waterfall_bp);
 		waterfall_width = 0;
+		WF_UNLOCK();
 		return;
 	}
 	waterfall_width = buckets;
@@ -747,11 +804,13 @@ setup_spectrum_filters(size_t buckets)
 		q = freq / freq_step;
 		waterfall_bp[i] = calc_bpf_coef(freq, q);
 		if (waterfall_bp[i] == NULL) {
+			WF_UNLOCK();
 			setup_spectrum_filters(0);
 			return;
 		}
 		waterfall_lp[i] = calc_bpf_coef(1, 0.5);
 	}
+	WF_UNLOCK();
 	return;
 }
 
@@ -763,18 +822,81 @@ feed_waterfall(int16_t value)
 
 	if (tuning_style != TUNE_ASCIIFALL)
 		return;
+	WF_LOCK();
 	for (i = 0; i < waterfall_width; i++) {
 		v = bq_filter(value, waterfall_bp[i]);
 		bq_filter(v * v, waterfall_lp[i]);
 	}
+	WF_UNLOCK();
 }
 
 double
 get_waterfall(size_t bucket)
 {
+	double ret = 0;
+
+	WF_LOCK();
 	if (bucket < waterfall_width)
-		return waterfall_lp[bucket]->buf[0];
-	if (bucket > 0)
-		return waterfall_lp[bucket - 1]->buf[0];
-	return 0;
+		ret = waterfall_lp[bucket]->buf[0];
+	WF_UNLOCK();
+	return ret;
+}
+
+static void *
+rx_thread(void *arg)
+{
+	int ret = -1;
+	char ch;
+
+	(void)arg;
+
+	pthread_set_name_np(pthread_self(), "RX");
+	for (;;) {
+		ret = read_rtty_ch(ret);
+		if (is_fsk_char(ret)) {
+			ch = baudot2asc(ret, rxfigs);
+			switch (ch) {
+				case 0x0e:
+					rxfigs = true;
+					break;
+				case 0x0f:
+				case ' ':	// USOS
+					rxfigs = false;
+					break;
+			}
+			write_rx(ch);
+			CH_LOCK();
+			chbuf[chh] = ch;
+			chh = next(chh, sizeof(chbuf) - 1);
+			if (chh == cht) {
+				cht = next(cht, sizeof(chbuf) - 1);
+				printf_errno("ring buffer full!");
+			}
+			CH_UNLOCK();
+		}
+		pthread_testcancel();
+	}
+
+	return NULL;
+}
+
+int
+get_rtty_ch(void)
+{
+	int ret;
+
+	CH_LOCK();
+	if (chh != cht) {
+		ret = chbuf[cht];
+		cht = next(cht, sizeof(chbuf) - 1);
+	}
+	else {
+		if (atomic_load(&hfs))
+			ret = FSK_DEMOD_HFS;
+		else
+			ret = FSK_DEMOD_SYNC;
+	}
+	CH_UNLOCK();
+
+	return ret;
 }
