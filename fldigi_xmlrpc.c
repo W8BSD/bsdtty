@@ -1034,7 +1034,11 @@ xmlrpc_thread(void *arg)
 
 	memset(&blk, 0xff, sizeof(blk));
 	assert(pthread_sigmask(SIG_BLOCK, &blk, NULL) == 0);
+#ifdef __linux__
+	pthread_setname_np(pthread_self(), "XML-RPC");
+#else
 	pthread_set_name_np(pthread_self(), "XML-RPC");
+#endif
 	pthread_cleanup_push(close_sockets, NULL);
 
 	for (;;) {

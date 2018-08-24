@@ -26,6 +26,7 @@
 
 #define NOISE_CORRECT
 
+#include <sys/ioctl.h>
 #include <sys/soundcard.h>
 #include <sys/types.h>
 
@@ -856,7 +857,11 @@ rx_thread(void *arg)
 	memset(&blk, 0xff, sizeof(blk));
 	assert(pthread_sigmask(SIG_BLOCK, &blk, NULL) == 0);
 
+#ifdef __linux__
+	pthread_setname_np(pthread_self(), "RX");
+#else
 	pthread_set_name_np(pthread_self(), "RX");
+#endif
 	for (;;) {
 		ret = read_rtty_ch(ret);
 		if (is_fsk_char(ret)) {
