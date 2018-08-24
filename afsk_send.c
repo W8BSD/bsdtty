@@ -225,6 +225,7 @@ send_afsk_bit(enum afsk_bit bit)
 			break;
 		case AFSK_UNKNOWN:
 			printf_errno("sending unknown bit");
+			break;
 	}
 	last_afsk_bit = bit;
 }

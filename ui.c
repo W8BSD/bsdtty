@@ -410,7 +410,7 @@ show_freq(void)
 {
 	uint64_t freq;
 	char fstr[32];
-	char mode[32];
+	char mode[16];
 	bool american = false;
 	bool legal = false;
 	bool subband = false;
@@ -436,6 +436,7 @@ show_freq(void)
 			case 'A':
 				if (toupper(settings.callsign[0]) > 'L')
 					break;
+				/* Fall-through */
 			case 'K':
 			case 'N':
 			case 'W':
