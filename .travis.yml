@@ -1,7 +1,6 @@
 language: C
 script: make
 before_install:
- - sudo apt-get install ncurses-dev
  - eval "${MATRIX_EVAL}"
 matrix:
   include:
@@ -14,6 +13,10 @@ matrix:
             - g++-4.9
       env:
         - MATRIX_EVAL="CC=gcc-4.9 && CXX=g++-4.9"
+      before_install:
+       - sudo apt-get install ncurses-dev
     - os: linux
       compiler: clang
+      before_install:
+       - sudo apt-get install ncurses-dev
     - os: osx
