@@ -370,12 +370,12 @@ write_tx(char ch)
 void
 write_rx(char ch)
 {
-	int y, x;
-	int my, mx;
+	int x, y;
+	int my;
 
 	CURS_LOCK();
 	getyx(rx, y, x);
-	getmaxyx(rx, my, mx);
+	my = getmaxy(rx);
 	switch (ch) {
 		case '\r':
 			wmove(rx, y, 0);
@@ -572,7 +572,7 @@ static void
 draw_tx_title(enum tuning_styles style)
 {
 	size_t i;
-	int y, x;
+	int x;
 
 	wmove(tx_title, 0, 0);
 	for (i = 0; i < 3; i++)
@@ -589,7 +589,7 @@ draw_tx_title(enum tuning_styles style)
 			break;
 	}
 
-	getyx(tx_title, y, x);
+	x = getcurx(tx_title);
 	for (i = x; i < tx_width; i++)
 		waddch(tx_title, ACS_HLINE);
 	wrefresh(tx_title);
@@ -601,7 +601,7 @@ setup_windows(void)
 	struct winsize ws;
 	int datrows;
 	int i;
-	int y, x;
+	int x;
 
 	if (ioctl(STDIN_FILENO, TIOCGWINSZ, &ws) == -1)
 		printf_errno("getting window size");
@@ -658,11 +658,11 @@ setup_windows(void)
 		waddch(rx_title, ACS_HLINE);
 	}
 	waddstr(status_title, " Status ");
-	getyx(status_title, y, x);
+	x = getcurx(status_title);
 	for (i = x; i < ws.ws_col; i++)
 		waddch(status_title, ACS_HLINE);
 	waddstr(rx_title, " RX ");
-	getyx(rx_title, y, x);
+	x = getcurx(rx_title);
 	for (i = x; i < ws.ws_col; i++)
 		waddch(rx_title, ACS_HLINE);
 	wrefresh(status_title);
@@ -1373,7 +1373,7 @@ display_charset(const char *name)
 {
 	char padded[8];
 
-	snprintf(padded, sizeof(padded), "%-11s", name);
+	snprintf(padded, sizeof(padded), "%-7s", name);
 	CURS_LOCK();
 	mvwaddstr(status, 0, 6, padded);
 	wrefresh(status);

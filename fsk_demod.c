@@ -87,7 +87,7 @@ static float snsamp;
 // Audio meter filter
 static struct bq_filter *afilt;
 // Hunt for Start
-static _Atomic(bool) hfs = ATOMIC_VAR_INIT(false);
+static atomic_bool hfs = ATOMIC_VAR_INIT(false);
 static double *hfs_buf;
 static size_t hfs_bufmax;
 static size_t hfs_head;
