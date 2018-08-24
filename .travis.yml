@@ -20,8 +20,9 @@ matrix:
           packages:
             - g++-4.9
       env:
-        - CC=gcc-4.9
-        - CXX=g++-4.9
+        global:
+          - CC=gcc-4.9
+          - CXX=g++-4.9
     - os: linux
       compiler: clang
       addons:
