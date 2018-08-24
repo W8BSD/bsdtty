@@ -11,15 +11,6 @@ before_install:
  - sudo apt-get install ncurses-dev
  - echo -n | openssl s_client -connect https://scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
 
-addons:
-  coverity_scan:
-    project:
-      name: "W8BSD/bsdtty"
-      description: "Console RTTY client"
-    notification_email: shurd@sasktel.net
-    build_command: "make"
-    branch_pattern: coverity_scan
-
 matrix:
   include:
     - os: linux
@@ -33,3 +24,11 @@ matrix:
         - MATRIX_EVAL="CC=gcc-4.9 && CXX=g++-4.9"
     - os: linux
       compiler: clang
+      addons:
+        coverity_scan:
+          project:
+            name: "W8BSD/bsdtty"
+            description: "Console RTTY client"
+          notification_email: shurd@sasktel.net
+          build_command: "make"
+          branch_pattern: master
