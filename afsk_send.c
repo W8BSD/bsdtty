@@ -93,7 +93,7 @@ generate_sine(double freq, struct afsk_buf *buf)
 		printf_errno("allocating AFSK buffer");
 
 	for (i = 0; i < nsamp; i++)
-		buf->buf[i*dsp_afsk_channels] = sin((double)i / wavelen * (2.0 * M_PI)) * (INT16_MAX >> 1);
+		buf->buf[i*dsp_afsk_channels] = sin((double)i / wavelen * (2.0 * M_PI)) * (INT16_MAX);
 
 	for (i = nsamp - 4; i < nsamp; i++) {
 		if ((buf->buf[i * dsp_afsk_channels] >= 0) && (buf->buf[(i-1) * dsp_afsk_channels] <= 0))

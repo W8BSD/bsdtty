@@ -37,6 +37,7 @@
 #include <math.h>
 #include <pthread.h>
 #include <pthread_np.h>
+#include <signal.h>
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -847,8 +848,11 @@ rx_thread(void *arg)
 {
 	int ret = -1;
 	char ch;
-
+	sigset_t blk;
 	(void)arg;
+
+	memset(&blk, 0xff, sizeof(blk));
+	assert(pthread_sigmask(SIG_BLOCK, &blk, NULL) == 0);
 
 	pthread_set_name_np(pthread_self(), "RX");
 	for (;;) {

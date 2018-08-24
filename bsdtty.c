@@ -215,7 +215,6 @@ int main(int argc, char **argv)
 	SETTING_UNLOCK();
 
 	setlocale(LC_ALL, "");
-	atexit(done);
 
 	/*
 	 * We want to set up the sockets before we setup curses since
@@ -225,6 +224,9 @@ int main(int argc, char **argv)
 
 	// Now set up curses
 	setup_curses();
+
+	// Do our cleanup handler here so the curses one is last.
+	atexit(done);
 
 	// Set up the RX stuff.
 	setup_rx(&rx_thread);
@@ -663,7 +665,21 @@ send_char(const char ch)
 static void
 done(void)
 {
-	set_rig_ptt(false);
+	/*
+	 * We need to clear the RX lock if we set it, but we don't
+	 * want assertions here, so don't use the macros.
+	 */
+	pthread_mutex_lock(&rts_lock);
+	pthread_rwlock_wrlock(&rts_rwlock);
+	pthread_mutex_unlock(&rts_lock);
+	if (rts) {
+		rts = false;
+		set_rig_ptt(false);
+		pthread_rwlock_unlock(&rts_rwlock);
+		pthread_mutex_unlock(&rx_lock);
+	}
+	else
+		pthread_rwlock_unlock(&rts_rwlock);
 	pthread_cancel(xmlrpc_thread);
 	pthread_join(xmlrpc_thread, NULL);
 	pthread_cancel(rx_thread);

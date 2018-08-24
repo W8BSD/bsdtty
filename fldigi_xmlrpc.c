@@ -43,6 +43,7 @@
 #include <netdb.h>
 #include <pthread.h>
 #include <pthread_np.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1026,8 +1027,11 @@ close_sockets(void *arg)
 static void *
 xmlrpc_thread(void *arg)
 {
+	sigset_t blk;
 	(void)arg;
 
+	memset(&blk, 0xff, sizeof(blk));
+	assert(pthread_sigmask(SIG_BLOCK, &blk, NULL) == 0);
 	pthread_set_name_np(pthread_self(), "XML-RPC");
 	pthread_cleanup_push(close_sockets, NULL);
 

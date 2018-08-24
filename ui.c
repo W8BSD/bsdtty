@@ -716,7 +716,9 @@ w_printf(WINDOW *win, const char *format, ...)
 static void
 do_endwin(void)
 {
+	CURS_LOCK();
 	endwin();
+	CURS_UNLOCK();
 }
 
 static void
