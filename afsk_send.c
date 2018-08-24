@@ -24,6 +24,7 @@
  *
  */
 
+#include <sys/ioctl.h>
 #include <sys/soundcard.h>
 #include <sys/types.h>
 #include <fcntl.h>
