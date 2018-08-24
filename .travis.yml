@@ -9,6 +9,7 @@ env:
 before_install:
  - sudo apt-get install ncurses-dev
  - echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
+ - eval ${MATRIX_EVAL}
 
 matrix:
   include:
@@ -20,9 +21,7 @@ matrix:
           packages:
             - g++-4.9
       env:
-        global:
-          - CC=gcc-4.9
-          - CXX=g++-4.9
+        - MATRIX_EVAL="CC=gcc-4.9 CXX=g++-4.9"
     - os: linux
       compiler: clang
       addons:
