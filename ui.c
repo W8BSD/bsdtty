@@ -1622,7 +1622,13 @@ update_waterfall(void)
 	struct timespec diff;
 	double d = 4000 / tx_width;
 
+#if defined(CLOCK_MONOTONIC_FAST)
 	clock_gettime(CLOCK_MONOTONIC_FAST, &now);
+#elif defined(CLOCK_MONOTONIC_COARSE)
+	clock_gettime(CLOCK_MONOTONIC_COARSE, &now);
+#else
+	clock_gettime(CLOCK_MONOTONIC, &now);
+#endif
 
 	if (last.tv_sec == 0) {
 		last = now;
