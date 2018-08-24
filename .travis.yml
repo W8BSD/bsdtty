@@ -2,33 +2,30 @@ language: C
 script: make
 env:
   global:
-   # The next declaration is the encrypted COVERITY_SCAN_TOKEN, created
-   #   via the "travis encrypt" command using the project repo's public key
-    - secure: "JWE4P/0HVSiN3V0cp5DqZtvnYs8KQKtnIqi4qusfTOcjNKKMZY6hSQeJHlUwU6HrItsScdHkQEqXRQ+EbCN/TEMvFqOxW2fatyIquUf+sIHqBe8RlwGC1nj/DnvBJHQtgK2PoWm40qmRQssvvleG3v6W6jQ2um7+BTUxsg9JEQS9R64cQtw3ogPzfo49YUmoMn1KQ3SPjYEmUjgcNWSH2UW0ordFhZ0EeYI+MvqfaNT6neptETAeJPpJL+05tPb464PvKhVvVYSLsvaTsiPNDeZ2QcSw3Fy4YWeILH2qHLxQDw+2DvZIH9LmIS7jLsh5nPlFz6xqMafhOY+vHLQcLeHuW7JUwb2oDnREDULOztfeRozkHBMa5UYxzBNoN3/41kd9RWoJJ4rFx57kFwmal5rBCZhC8XwBimXWpX5I0kkLns1xp+fHrVyeYB50RCWfAyiEWrI9QNgh2nB9YUTL8r3bGcbaT3i8FpEwSnD+aSGo6ttnuSTWORJiv2Mw61yg1QM1etzThZE5jH/2UG9ErPuFT1qlaT9Uo75S5oAjH2qOb45BR4elofiag4yzI3v5VvuroKJNFA0klRDWr+qpkOdPIE3oCb13JmxNZItlbItu7XnEU8UE7mZnT9lAQ8iHRSgYPl+emIwZt16idi3w54kDXKEXDs2B3zwHA57KHrc="
-
+    secure: nxgJyvcOYZWGxHYPMMioaLJ25p5mWSTE4dEK5mNZrmRLGm+tTqB1SIfDSGYRO4U/nisLt97JWM4fMv9sly7Q29l79PkTgT4PZvR3DoQV+FPoeZnTmAcj+iAHfzRycSVlxwmp0zdhlbiZ4pHMKYjGrg0Br1XJyosRbsG+JRVbbhwKFgXwafjS6i4C2ILYxuCViBHtwaZ2J5lPIBEalUwhlPy/ZT4d+Uc8WXqKYOGNMYrqtJ+KQRBiXmcHdl9cACSTpt8sBXaMixIYUu1pUpVTitVa0E6gmt76qpVclZ44bdNbkqy5PCHgeeGXyvFmAyOLIZwGmPzOww7Odow35W4tQj3Mmt0rY9FCxjMmMbYE7uscC7hoYXZDLVFRJYWaBgEV17rotNn0KYLCEsttFV87iu5HDYhI7bmHtdUd9+vtXEOhg6U0xWyyD5qnYWekBrvrYdCP0mpgGfHb36Njxtw7AhB1zxVx2g15jjFA7WHgzPtWevzwlDLo4IlHZ6y8Lj4nXLDKTn/vXXrhXNJBM76e5WLYzBft2G0dOtgRRPIqk1U4gcIkCojLm7Qs8LIVs3nrm6Zb6SxUW1Wp0JtdCjX2DzIXEYkch+xSeCSee1WjJwIMyuNh+KBdRvyw8MbGO0pXdMT8UeOf66eBO2n6WGAMV4qffKEdmKBs8WP3blRuTzo=
 before_install:
- - sudo apt-get install ncurses-dev
- - echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
- - eval ${MATRIX_EVAL}
-
+- sudo apt-get install ncurses-dev
+- echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END
+  CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
+- eval ${MATRIX_EVAL}
 matrix:
   include:
-    - os: linux
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-          packages:
-            - g++-4.9
-      env:
-        - MATRIX_EVAL="CC=gcc-4.9 CXX=g++-4.9"
-    - os: linux
-      compiler: clang
-      addons:
-        coverity_scan:
-          project:
-            name: "W8BSD/bsdtty"
-            description: "Console RTTY client"
-          notification_email: shurd@sasktel.net
-          build_command: "make"
-          branch_pattern: master
+  - os: linux
+    addons:
+      apt:
+        sources:
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-4.9
+    env:
+    - MATRIX_EVAL="CC=gcc-4.9 CXX=g++-4.9"
+  - os: linux
+    compiler: clang
+    addons:
+      coverity_scan:
+        project:
+          name: W8BSD/bsdtty
+          description: Console RTTY client
+        notification_email: shurd@sasktel.net
+        build_command: make
+        branch_pattern: master
