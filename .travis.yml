@@ -7,7 +7,6 @@ env:
     - secure: "JWE4P/0HVSiN3V0cp5DqZtvnYs8KQKtnIqi4qusfTOcjNKKMZY6hSQeJHlUwU6HrItsScdHkQEqXRQ+EbCN/TEMvFqOxW2fatyIquUf+sIHqBe8RlwGC1nj/DnvBJHQtgK2PoWm40qmRQssvvleG3v6W6jQ2um7+BTUxsg9JEQS9R64cQtw3ogPzfo49YUmoMn1KQ3SPjYEmUjgcNWSH2UW0ordFhZ0EeYI+MvqfaNT6neptETAeJPpJL+05tPb464PvKhVvVYSLsvaTsiPNDeZ2QcSw3Fy4YWeILH2qHLxQDw+2DvZIH9LmIS7jLsh5nPlFz6xqMafhOY+vHLQcLeHuW7JUwb2oDnREDULOztfeRozkHBMa5UYxzBNoN3/41kd9RWoJJ4rFx57kFwmal5rBCZhC8XwBimXWpX5I0kkLns1xp+fHrVyeYB50RCWfAyiEWrI9QNgh2nB9YUTL8r3bGcbaT3i8FpEwSnD+aSGo6ttnuSTWORJiv2Mw61yg1QM1etzThZE5jH/2UG9ErPuFT1qlaT9Uo75S5oAjH2qOb45BR4elofiag4yzI3v5VvuroKJNFA0klRDWr+qpkOdPIE3oCb13JmxNZItlbItu7XnEU8UE7mZnT9lAQ8iHRSgYPl+emIwZt16idi3w54kDXKEXDs2B3zwHA57KHrc="
 
 before_install:
- - eval "${MATRIX_EVAL}"
  - sudo apt-get install ncurses-dev
  - echo -n | openssl s_client -connect https://scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
 
@@ -21,7 +20,8 @@ matrix:
           packages:
             - g++-4.9
       env:
-        - MATRIX_EVAL="CC=gcc-4.9 && CXX=g++-4.9"
+        - CC=gcc-4.9
+        - CXX=g++-4.9
     - os: linux
       compiler: clang
       addons:
