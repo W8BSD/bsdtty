@@ -1,8 +1,25 @@
 language: C
 script: make
+env:
+  global:
+   # The next declaration is the encrypted COVERITY_SCAN_TOKEN, created
+   #   via the "travis encrypt" command using the project repo's public key
+   - secure: "hM2Au44izHaXpdjTBFmCK96UQsyydAsFMKflOy7X/s1Xxn/bQmyDj/e1ThETkSQw8v0d4cA9AgkTLmczpHIamm6CZjhnybUoVPzVl+yXBq33CD+G3+k1AT+TzHi3T/dpByBwJ6hmLvYSLIilmVFm0YqJxd7KcEQUYq1tRGChNINglXziVrwn1rjPZ6V/r26m2RgpAlo3TrJcvs92uhBGXkdTa34oY4SS1TblA/u3IClZce8Cc6b2McK/zziNh8tlzI4i5BBblTsXfTZGAAfPVnLjBE7I3vjG+iP017lb8q42zNg9zh4eV3/pJtvUhnnsiVa2isaHX6amxMUFXZv850gpX/p3ZHrcKadJEnBl4gOa85X8aMLlfb5SZB+xkCAMVhNDZLERxHblnCH6BfYEHlvJsYYlymY1RB9KGH/iBGX9yF+4og7WQa9UOKV2kE/EtmAtceJ0/7VHa0xIb552cuHWg3tF9P7svNILT25CAv/YNNfsYfgdclN6YInqKV8+wbNFXxndCcCj1GLXTy+8iafdu8XCh44tsTDOoe9EjI403FUprc6eL37H2wCU7f/Fmerm73OA5SXJvXBOGRJ45HPRGThnAg3YmT4YY4lRxCIFayhKrSE8vHcka5pGcsGTAUXxL8sRujDIqQx1g1dYoNgsKXEpoHaROj89cxTyCZ8="
+
 before_install:
  - eval "${MATRIX_EVAL}"
  - sudo apt-get install ncurses-dev
+ - echo -n | openssl s_client -connect https://scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-
+
+addons:
+  coverity_scan:
+    project:
+      name: "W8BSD/bsdtty"
+      description: "Console RTTY client"
+    notification_email: shurd@sasktel.net
+    build_command: "make"
+    branch_pattern: coverity_scan
+
 matrix:
   include:
     - os: linux
