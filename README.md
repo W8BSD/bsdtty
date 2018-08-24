@@ -77,7 +77,7 @@ Outstanding issues:
 
 W8BSD - Stephen Hurd - shurd@sasktel.net
 
-<a href="https://scan.coverity.com/projects/bsdtty">
+<a href="https://scan.coverity.com/projects/w8bsd-bsdtty">
   <img alt="Coverity Scan Build Status"
-       src="https://scan.coverity.com/projects/16567/badge.svg"/>
+       src="https://scan.coverity.com/projects/16569/badge.svg"/>
 </a>
