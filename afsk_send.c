@@ -30,9 +30,13 @@
 #include <inttypes.h>
 #include <math.h>
 #include <pthread.h>
+#include <pthread_np.h>
+#include <semaphore.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #include "afsk_send.h"
@@ -55,6 +59,18 @@ struct afsk_buf {
 	size_t size;
 	int16_t *buf;
 };
+
+/* AFSK queue */
+struct afsk_queue {
+	struct afsk_buf *buf;
+	struct afsk_queue *next;
+};
+static struct afsk_queue *qhead;
+static struct afsk_queue *qtail;
+static pthread_mutex_t afsk_queue_lock;
+#define AQ_LOCK()	assert(pthread_mutex_lock(&afsk_queue_lock) == 0)
+#define AQ_UNLOCK()	assert(pthread_mutex_unlock(&afsk_queue_lock) == 0)
+
 static struct afsk_buf zero_to_mark;
 static struct afsk_buf zero_to_space;
 static struct afsk_buf mark_to_zero;
@@ -68,12 +84,17 @@ static int afsk_dsp_rate = 48000;
 static pthread_mutex_t afsk_mutex = PTHREAD_MUTEX_INITIALIZER;
 #define AFSK_LOCK() pthread_mutex_lock(&afsk_mutex);
 #define AFSK_UNLOCK() pthread_mutex_unlock(&afsk_mutex);
+static sem_t qsem;
+static bool qsem_initialized;
+static pthread_t afsk_threadid;
 
 static void adjust_wave(struct afsk_buf *buf, double start_phase);
 static void generate_afsk_samples(void);
 static void generate_sine(double freq, struct afsk_buf *buf);
 static void send_afsk_buf(struct afsk_buf *buf);
 static void send_afsk_bit(enum afsk_bit bit);
+static void * afsk_thread(void *arg);
+static void flush_queue(void);
 
 /*
  * Requires the setting lock to be held.
@@ -206,7 +227,7 @@ send_afsk_bit(enum afsk_bit bit)
 }
 
 static void
-send_afsk_buf(struct afsk_buf *buf)
+write_afsk_buf(struct afsk_buf *buf)
 {
 	size_t sent = 0;
 	int ret;
@@ -218,6 +239,26 @@ send_afsk_buf(struct afsk_buf *buf)
 		ret /= sizeof(buf->buf[0]);
 		sent += ret;
 	}
+}
+
+static void
+send_afsk_buf(struct afsk_buf *buf)
+{
+	struct afsk_queue *new;
+
+	new = malloc(sizeof(*new));
+	if (new == NULL)
+		printf_errno("allocating afsk queue entry");
+	new->buf = buf;
+	new->next = NULL;
+	AQ_LOCK();
+	if (qtail != NULL)
+		qtail->next = new;
+	qtail = new;
+	if (qhead == NULL)
+		qhead = new;
+	AQ_UNLOCK();
+	sem_post(&qsem);
 }
 
 static void
@@ -279,6 +320,15 @@ setup_afsk()
 	if (ioctl(dsp_afsk, SNDCTL_DSP_SPEED, &afsk_dsp_rate) == -1)
 		printf_errno("setting sample rate");
 	SETTING_UNLOCK();
+	if (qsem_initialized) {
+		sem_destroy(&qsem);
+		qsem_initialized = false;
+	}
+	if (sem_init(&qsem, 0, 0) == -1)
+		printf_errno("initializing semaphore");
+	qsem_initialized = true;
+	if (pthread_create(&afsk_threadid, NULL, afsk_thread, NULL) != 0)
+		printf_errno("Creating AFSK thread");
 	AFSK_UNLOCK();
 }
 
@@ -323,11 +373,64 @@ diddle_afsk(void)
 	send_afsk_char(0x1f);
 }
 
+static void *
+afsk_thread(void *arg)
+{
+	struct afsk_queue *ent;
+	sigset_t blk;
+	(void)arg;
+
+	memset(&blk, 0xff, sizeof(blk));
+	assert(pthread_sigmask(SIG_BLOCK, &blk, NULL) == 0);
+
+	pthread_set_name_np(pthread_self(), "AFSK");
+
+	for (;;) {
+		sem_wait(&qsem);
+		AQ_LOCK();
+		if (qhead == NULL)
+			continue;
+		ent = qhead;
+		qhead = qhead->next;
+		if (qhead == NULL)
+			qtail = NULL;
+		AQ_UNLOCK();
+		write_afsk_buf(ent->buf);
+		free(ent);
+	}
+}
+
+static void
+flush_queue(void)
+{
+	struct afsk_queue *ent;
+	struct afsk_queue *next;
+
+	AQ_LOCK();
+	for (ent = qhead; ent != NULL; ent = next) {
+		next = ent->next;
+		free(ent);
+		assert(sem_trywait(&qsem) == 0);
+	}
+	qhead = qtail = NULL;
+	AQ_UNLOCK();
+}
+
+static void
+end_afsk_thread(void)
+{
+	pthread_cancel(afsk_threadid);
+	pthread_join(afsk_threadid, NULL);
+	flush_queue();
+}
+
 struct send_fsk_api afsk_api = {
 	.toggle_reverse = afsk_toggle_reverse,
 	.end_tx = end_afsk_tx,
 	.send_preamble = send_afsk_preamble,
 	.send_char = send_afsk_char,
 	.setup = setup_afsk,
-	.diddle = diddle_afsk
+	.diddle = diddle_afsk,
+	.end_fsk = end_afsk_thread,
+	.flush = flush_queue
 };

@@ -58,6 +58,7 @@ static void handle_rx_char(char ch);
 static void input_loop(void);
 static void send_char(const char ch);
 static void send_rtty_char(char ch);
+static void set_rts(bool newval, bool force);
 static void setup_log(void);
 noreturn static void usage(const char *cmd);
 static void setup_defaults(void);
@@ -260,6 +261,7 @@ reinit(void)
 	fix_config();
 
 	// Set up the FSK stuff.
+	send_fsk->end_fsk();
 	pthread_cancel(rx_thread);
 	pthread_join(rx_thread, NULL);
 	setup_rx(&rx_thread);
@@ -382,6 +384,15 @@ do_tx(int *rxstate)
 			break;
 		case 3:
 			return false;
+		case 4:
+			RTS_WLOCK();
+			if (rts) {
+				set_rts(false, true);
+				RTS_UNLOCK();
+			}
+			else
+				RTS_UNLOCK();
+			break;
 		case RTTY_FKEY(1):
 			do_macro(1);
 			break;
@@ -461,7 +472,7 @@ do_tx(int *rxstate)
 			break;
 		case 23:
 			RTS_RLOCK();
-			if (rts) {
+			if (!rts) {
 				RTS_UNLOCK();
 				toggle_tuning_aid();
 			}
@@ -471,7 +482,7 @@ do_tx(int *rxstate)
 		case 0x7f:
 		case 0x08:
 			RTS_RLOCK();
-			if (rts) {
+			if (!rts) {
 				RTS_UNLOCK();
 				change_settings();
 				*rxstate = -1;
@@ -558,69 +569,86 @@ do_macro(int fkey)
 	return true;
 }
 
+/*
+ * Must be called with RTS_WLOCK().
+ * Will downgrade it to a read lock.
+ */
 static void
-send_char(const char ch)
+set_rts(bool newval, bool force)
 {
-	const char fstr[] = "\x1f\x1b"; // LTRS, FIGS
-	char bch;
-	char ach;
 	time_t now;
 	static uint64_t freq = 0;
 	static char mode[16];
 
-	bch = asc2baudot(ch, txfigs);
-
-	RTS_WLOCK();
-	if (ch == '\t' || (!rts && bch != 0)) {
-		rts = !rts;
-		RTS_DGLOCK();
-		if (!rts) {
-			if (send_end_space)
-				send_rtty_char(4);
-			send_fsk->end_tx();
-			RX_UNLOCK();
+	rts = newval;
+	RTS_DGLOCK();
+	if (!rts) {
+		if (force)
+			send_fsk->flush();
+		if (send_end_space && !force)
+			send_rtty_char(4);
+		send_fsk->end_tx();
+		RX_UNLOCK();
+	}
+	if (rts) {
+		get_rig_freq_mode(&freq, mode, sizeof(mode));
+		if (freq) {
+			SETTING_RLOCK();
+			freq += settings.freq_offset;
+			SETTING_UNLOCK();
 		}
-		if (rts) {
-			get_rig_freq_mode(&freq, mode, sizeof(mode));
-			if (freq) {
-				SETTING_RLOCK();
-				freq += settings.freq_offset;
-				SETTING_UNLOCK();
-			}
-		}
-		now = time(NULL);
-		if (log_file != NULL) {
-			if (freq == 0)
-				fprintf(log_file, "\n------- %s of transmission (%.24s) -------\n", rts ? "Start" : "End", ctime(&now));
-			else
-				fprintf(log_file, "\n------- %s of transmission (%.24s) on %s (%s) -------\n", rts ? "Start" : "End", ctime(&now), format_freq(freq), mode);
-			fflush(log_file);
-		}
-		if (rts)
-			RX_LOCK();
-		mark_tx_extent(rts);
-		set_rig_ptt(rts);
-		if (rts) {
-			// Stop the RX thread...
-			/* 
-			 * Start with a byte length of mark to help sync...
-			 * This also covers the RX -> TX switching time
-			 * due to the relay.
-			 */
+	}
+	now = time(NULL);
+	if (log_file != NULL) {
+		if (freq == 0)
+			fprintf(log_file, "\n------- %s of transmission (%.24s) -------\n", rts ? "Start" : "End", ctime(&now));
+		else
+			fprintf(log_file, "\n------- %s of transmission (%.24s) on %s (%s) -------\n", rts ? "Start" : "End", ctime(&now), format_freq(freq), mode);
+		fflush(log_file);
+	}
+	if (rts)
+		RX_LOCK();
+	mark_tx_extent(rts);
+	set_rig_ptt(rts);
+	if (rts) {
+		// Stop the RX thread...
+		/* 
+		 * Start with a byte length of mark to help sync...
+		 * This also covers the RX -> TX switching time
+		 * due to the relay.
+		 */
+		if (!force)
 			send_fsk->send_preamble();
-			txfigs = false;
-			/*
-			 * Per ITU-T S.1, the FIRST symbol should be a
-			 * shift... since it's most likely to be lost,
-			 * a LTRS is the safest, since a FIGS will get
-			 * repeated after the CRLF.
-			 */
+		txfigs = false;
+		/*
+		 * Per ITU-T S.1, the FIRST symbol should be a
+		 * shift... since it's most likely to be lost,
+		 * a LTRS is the safest, since a FIGS will get
+		 * repeated after the CRLF.
+		 */
+		if (!force) {
 			send_rtty_char(0x1f);
 			if (send_start_crlf) {
 				send_rtty_char(8);
 				send_rtty_char(2);
 			}
 		}
+	}
+}
+
+static void
+send_char(const char ch)
+{
+	const char fstr[] = "\x1f\x1b"; // LTRS, FIGS
+	char bch;
+	char ach;
+
+	bch = asc2baudot(ch, txfigs);
+
+	RTS_WLOCK();
+	if (ch == '\t' || (!rts && bch != 0)) {
+		rts = !rts;
+		set_rts(rts, false);
 	}
 	RTS_UNLOCK();
 	if (bch == 0)
@@ -680,6 +708,8 @@ done(void)
 	}
 	else
 		pthread_rwlock_unlock(&rts_rwlock);
+	if (send_fsk)
+		send_fsk->end_fsk();
 	pthread_cancel(xmlrpc_thread);
 	pthread_join(xmlrpc_thread, NULL);
 	pthread_cancel(rx_thread);

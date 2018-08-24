@@ -904,3 +904,9 @@ get_rtty_ch(void)
 
 	return ret;
 }
+
+void
+end_fsk_thread(void)
+{
+	// There's no FSK thread to end.
+}

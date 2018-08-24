@@ -40,6 +40,14 @@ static pthread_mutex_t fsk_mutex = PTHREAD_MUTEX_INITIALIZER;
 #define FSK_LOCK() pthread_mutex_lock(&fsk_mutex);
 #define FSK_UNLOCK() pthread_mutex_unlock(&fsk_mutex);
 
+static void end_fsk_thread(void);
+static void fsk_toggle_reverse(void);
+static void end_fsk_tx(void);
+static void send_fsk_preamble(void);
+static void send_fsk_char(char ch);
+static void setup_fsk(void);
+static void diddle_fsk(void);
+
 static void
 fsk_toggle_reverse(void)
 {
@@ -151,11 +159,27 @@ diddle_fsk(void)
 	// fsk can't diddle.
 }
 
+static void
+end_fsk_thread(void)
+{
+	// There is no FSK thread to end.
+}
+
+static void
+flush_fsk(void)
+{
+	int wh = FWRITE;
+
+	ioctl(fsk_tty, TIOCFLUSH, &wh);
+}
+
 struct send_fsk_api fsk_api = {
 	.toggle_reverse = fsk_toggle_reverse,
 	.end_tx = end_fsk_tx,
 	.send_preamble = send_fsk_preamble,
 	.send_char = send_fsk_char,
 	.setup = setup_fsk,
-	.diddle = diddle_fsk
+	.diddle = diddle_fsk,
+	.end_fsk = end_fsk_thread,
+	.flush = flush_fsk
 };
