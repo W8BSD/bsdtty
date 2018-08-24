@@ -4,3 +4,4 @@ compiler:
  - gcc
 before_install:
  - sudo apt-get install ncurses-dev
+script: make
