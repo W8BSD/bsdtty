@@ -36,7 +36,9 @@
 #include <inttypes.h>
 #include <math.h>
 #include <pthread.h>
+#ifndef __linux__
 #include <pthread_np.h>
+#endif
 #include <signal.h>
 #include <stdatomic.h>
 #include <stdbool.h>

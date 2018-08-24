@@ -30,7 +30,9 @@
 #include <inttypes.h>
 #include <math.h>
 #include <pthread.h>
+#ifndef __linux__
 #include <pthread_np.h>
+#endif
 #include <semaphore.h>
 #include <signal.h>
 #include <stdbool.h>

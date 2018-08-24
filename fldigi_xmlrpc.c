@@ -42,7 +42,9 @@
 #include <limits.h>
 #include <netdb.h>
 #include <pthread.h>
+#ifndef __linux__
 #include <pthread_np.h>
+#endif
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
