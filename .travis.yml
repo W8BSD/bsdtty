@@ -2,6 +2,7 @@ language: C
 script: make
 before_install:
  - sudo apt-get install ncurses-dev
+ - eval "${MATRIX_EVAL}"
 matrix:
   include:
     - os: linux
