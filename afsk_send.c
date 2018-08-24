@@ -31,7 +31,7 @@
 #include <inttypes.h>
 #include <math.h>
 #include <pthread.h>
-#ifndef __linux__
+#ifdef __FreeBSD__
 #include <pthread_np.h>
 #endif
 #include <semaphore.h>
