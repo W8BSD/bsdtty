@@ -60,7 +60,7 @@ end_fsk_tx(void)
 	useconds_t sl;
 
 	FSK_LOCK();
-	ioctl(fsk_tty, TIOCDRAIN);
+	tcdrain(fsk_tty);
 	// Space still gets cut off... wait one char
 	SETTING_RLOCK();
 	sl = ((1/((double)settings.baud_numerator / settings.baud_denominator))*7.5)*1000000;
@@ -133,7 +133,10 @@ setup_fsk(void)
 	 */
 	t.c_iflag = IGNBRK;
 	t.c_oflag = 0;
-	t.c_cflag = CS5 | CSTOPB | CLOCAL | CNO_RTSDTR;
+	t.c_cflag = CS5 | CSTOPB | CLOCAL;
+#ifdef CNO_RTSDTR
+	t.c_cflag |= CNO_RTSDTR;
+#endif
 
 	if (tcsetattr(fsk_tty, TCSADRAIN, &t) == -1)
 		printf_errno("unable to set attributes");
@@ -168,9 +171,7 @@ end_fsk_thread(void)
 static void
 flush_fsk(void)
 {
-	int wh = FWRITE;
-
-	ioctl(fsk_tty, TIOCFLUSH, &wh);
+	tcflush(fsk_tty, TCOFLUSH);
 }
 
 struct send_fsk_api fsk_api = {
