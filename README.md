@@ -76,3 +76,8 @@ Outstanding issues:
 * Emergency abort key... no way to stop a transmission right now.
 
 W8BSD - Stephen Hurd - shurd@sasktel.net
+
+<a href="https://scan.coverity.com/projects/bsdtty">
+  <img alt="Coverity Scan Build Status"
+       src="https://scan.coverity.com/projects/16567/badge.svg"/>
+</a>
