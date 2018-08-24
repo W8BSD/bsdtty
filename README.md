@@ -74,3 +74,5 @@ Outstanding issues:
 * Add CQRLOG integration.
 * Deal with explicit LFs in macros... CR is expanded to CRLF
 * Emergency abort key... no way to stop a transmission right now.
+
+W8BSD - Stephen Hurd - shurd@sasktel.net
