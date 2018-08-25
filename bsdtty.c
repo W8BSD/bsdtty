@@ -697,17 +697,17 @@ done(void)
 	 * We need to clear the RX lock if we set it, but we don't
 	 * want assertions here, so don't use the macros.
 	 */
-	pthread_mutex_lock(&rts_lock);
-	pthread_rwlock_wrlock(&rts_rwlock);
-	pthread_mutex_unlock(&rts_lock);
+	(void)pthread_mutex_lock(&rts_lock);
+	(void)pthread_rwlock_wrlock(&rts_rwlock);
+	(void)pthread_mutex_unlock(&rts_lock);
 	if (rts) {
 		rts = false;
 		set_rig_ptt(false);
-		pthread_rwlock_unlock(&rts_rwlock);
-		pthread_mutex_unlock(&rx_lock);
+		(void)pthread_rwlock_unlock(&rts_rwlock);
+		(void)pthread_mutex_unlock(&rx_lock);
 	}
 	else
-		pthread_rwlock_unlock(&rts_rwlock);
+		(void)pthread_rwlock_unlock(&rts_rwlock);
 	if (send_fsk)
 		send_fsk->end_fsk();
 	pthread_cancel(xmlrpc_thread);
