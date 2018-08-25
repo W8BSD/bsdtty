@@ -693,21 +693,31 @@ send_char(const char ch)
 static void
 done(void)
 {
+	bool mlocked;
+	bool rwlocked;
+	bool rxlocked;
+
 	/*
 	 * We need to clear the RX lock if we set it, but we don't
 	 * want assertions here, so don't use the macros.
 	 */
-	(void)pthread_mutex_lock(&rts_lock);
-	(void)pthread_rwlock_wrlock(&rts_rwlock);
-	(void)pthread_mutex_unlock(&rts_lock);
+	mlocked = (pthread_mutex_lock(&rts_lock) == 0);
+	rwlocked = (pthread_rwlock_wrlock(&rts_rwlock) == 0);
+	if (mlocked)
+		mlocked = (pthread_mutex_unlock(&rts_lock) != 0);
 	if (rts) {
 		rts = false;
 		set_rig_ptt(false);
-		(void)pthread_rwlock_unlock(&rts_rwlock);
-		(void)pthread_mutex_unlock(&rx_lock);
+		if (rwlocked)
+			rwlocked = (pthread_rwlock_unlock(&rts_rwlock) != 0);
+		rxlocked = (pthread_mutex_unlock(&rx_lock) != 0);
 	}
-	else
-		(void)pthread_rwlock_unlock(&rts_rwlock);
+	else {
+		if (rwlocked)
+			rwlocked = (pthread_rwlock_unlock(&rts_rwlock) != 0);
+	}
+	if (rwlocked || mlocked || rxlocked)
+		fprintf(stderr, "error in lock cleanup: rx: %d rw: %d m: %d\n", rxlocked, rwlocked, mlocked);
 	if (send_fsk)
 		send_fsk->end_fsk();
 	pthread_cancel(xmlrpc_thread);
