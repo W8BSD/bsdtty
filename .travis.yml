@@ -26,7 +26,7 @@ matrix:
       coverity_scan:
         project:
           #name: W8BSD/bsdtty
-          name: W8BSD/bsdtty
+          name: bsdtty
           description: Console RTTY client
         notification_email: shurd@sasktel.net
         build_command: make
