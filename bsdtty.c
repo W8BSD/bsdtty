@@ -514,6 +514,7 @@ do_macro(int fkey)
 	int m;
 	char *str;
 	bool clear = false;
+	bool upd_ser = false;
 
 	m = fkey - 1;
 	SETTING_RLOCK();
@@ -546,15 +547,13 @@ do_macro(int fkey)
 				BSDTTY_LOCK();
 				serial++;
 				BSDTTY_UNLOCK();
+				upd_ser = true;
 				/* Fall-through */
 			case '%':
 				BSDTTY_LOCK();
 				asprintf(&str, "%d", serial);
 				BSDTTY_UNLOCK();
 				send_string(str);
-				BSDTTY_LOCK();
-				update_serial(serial);
-				BSDTTY_UNLOCK();
 				break;
 			default:
 				send_char(settings.macros[m][i]);
@@ -567,6 +566,11 @@ do_macro(int fkey)
 	SETTING_UNLOCK();
 	if (clear)
 		clear_rx_window();
+	if (upd_ser) {
+		BSDTTY_LOCK();
+		update_serial(serial);
+		BSDTTY_UNLOCK();
+	}
 	return true;
 }
 
