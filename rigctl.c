@@ -6,6 +6,7 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 
+#include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <netdb.h>
