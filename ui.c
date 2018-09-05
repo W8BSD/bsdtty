@@ -685,6 +685,8 @@ teardown_windows(void)
 	delwin(rx_title);
 	delwin(status);
 	delwin(status_title);
+	wclear(stdscr);
+	wrefresh(stdscr);
 	last_freq = 0;
 	last_mode[0] = 0;
 	reset_tuning_aid();
