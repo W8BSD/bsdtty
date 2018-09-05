@@ -102,7 +102,7 @@ sock_readln(int sock, char *buf, size_t bufsz)
 
 	for (i = 0; i < bufsz - 1; i++) {
 retry:
-		ret = recv(sock, &buf[i], 1, MSG_WAITALL);
+		ret = recv(sock, buf + i, 1, MSG_WAITALL);
 		if (ret == -1) {
 			if (errno == EINTR)
 				goto retry;
