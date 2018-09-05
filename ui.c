@@ -1652,7 +1652,7 @@ update_waterfall(void)
 			max = v;
 	}
 	for (i = 0; i < tx_width; i++)
-		mvwaddch(tuning_aid, tx_height - 2, i, chars[(int)((get_waterfall(i) - min) / ((max - min) / (sizeof(chars) - 1)))]);
+		mvwaddch(tuning_aid, tx_height - 2, i, chars[max == min ? 0 : (int)((get_waterfall(i) - min) / ((max - min) / (sizeof(chars) - 1)))]);
 	SETTING_RLOCK();
 	mvwaddch(tuning_aid, tx_height - 1, settings.mark_freq / d, ACS_VLINE);
 	mvwaddch(tuning_aid, tx_height - 1, settings.space_freq / d, ACS_VLINE);
