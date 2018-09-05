@@ -79,7 +79,7 @@ setup_rig_control(void)
 		// Set up the UART
 		if (rc_tty != -1)
 			close(rc_tty);
-		rc_tty = open(settings.tty_name, O_RDWR|O_DIRECT|O_NONBLOCK);
+		rc_tty = open(settings.tty_name, O_RDWR|O_NONBLOCK);
 		if (rc_tty == -1)
 			printf_errno("unable to open %s", settings.tty_name);
 

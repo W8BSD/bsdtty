@@ -106,7 +106,7 @@ setup_fsk(void)
 	if (fsk_tty != -1)
 		close(fsk_tty);
 	SETTING_RLOCK();
-	fsk_tty = open(settings.tty_name, O_RDWR|O_DIRECT|O_NONBLOCK);
+	fsk_tty = open(settings.tty_name, O_RDWR|O_NONBLOCK);
 	if (fsk_tty == -1)
 		printf_errno("unable to open %s", settings.tty_name);
 
