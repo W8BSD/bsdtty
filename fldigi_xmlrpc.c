@@ -193,7 +193,6 @@ handle_xmlrpc(void)
 	socklen_t salen = sizeof(sa);
 	int sock;
 	int *tmp;
-	int opt;
 	int count = 0;
 
 	rfds = rsocks;
@@ -235,8 +234,6 @@ handle_xmlrpc(void)
 					if (sock > msocks)
 						msocks = sock;
 					FD_SET(sock, &rsocks);
-					opt = 1;
-					setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
 				}
 			}
 			if (--count == 0)

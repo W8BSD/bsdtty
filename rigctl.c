@@ -38,7 +38,6 @@ setup_rig_control(void)
 	struct addrinfo *ai;
 	struct addrinfo *aip;
 	char port[6];
-	int opt;
 	bool want_tty;
 
 	RC_LOCK();
@@ -59,11 +58,8 @@ setup_rig_control(void)
 			rigctld_socket = socket(aip->ai_family, aip->ai_socktype, aip->ai_protocol);
 			if (rigctld_socket == -1)
 				continue;
-			if (connect(rigctld_socket, aip->ai_addr, aip->ai_addrlen) == 0) {
-				opt = 1;
-				setsockopt(rigctld_socket, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+			if (connect(rigctld_socket, aip->ai_addr, aip->ai_addrlen) == 0)
 				break;
-			}
 			close(rigctld_socket);
 			rigctld_socket = -1;
 		}
