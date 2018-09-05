@@ -159,7 +159,6 @@ update_tuning_aid(double mark, double space)
 	static double cmaxs = 0;
 	double mmult, smult;
 	int madd, sadd;
-	int phaseadj = 0;
 	int y, x;
 	chtype ch;
 	int och;
@@ -192,16 +191,8 @@ update_tuning_aid(double mark, double space)
 			printf_errno("alocating %d bytes", sizeof(*buf) * nsamp * 2 + 1);
 	}
 
-	if (phaseadj < 0) {
-		if (wsamp >= phaseadj)
-			buf[(wsamp + phaseadj)*2] = mark;
-		buf[wsamp*2+1] = space;
-	}
-	else {
-		buf[wsamp*2] = mark;
-		if (wsamp >= phaseadj)
-			buf[(wsamp - phaseadj)*2+1] = space;
-	}
+	buf[wsamp*2] = mark;
+	buf[wsamp*2+1] = space;
 	if (fabs(mark) > maxm)
 		maxm = fabs(mark);
 	if (fabs(space) > maxs)
@@ -212,7 +203,7 @@ update_tuning_aid(double mark, double space)
 		cmaxs = fabs(space);
 	wsamp++;
 
-	if (wsamp - phaseadj == nsamp) {
+	if (wsamp == nsamp) {
 		/*
 		 * Scale back maxm so noise is at 33% of space
 		 * We want it to take one second to reach the new max
@@ -1504,7 +1495,9 @@ capture_call(int y, int x)
 done:
 	*c = 0;
 	update_captured_call_locked(captured);
+	CURS_UNLOCK();
 	captured_callsign(captured);
+	CURS_LOCK();
 
 	wmove(rx, iy, ix);
 	wrefresh(rx);
