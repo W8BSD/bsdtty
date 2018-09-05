@@ -110,7 +110,6 @@ retry:
 		}
 		else if (ret == 0)	// Remote closed connection
 			break;
-		assert(ret == 1);	// Maybe silence Coverity warning?
 		if (buf[i] == '\n')
 			break;
 	}
