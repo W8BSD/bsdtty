@@ -82,6 +82,7 @@ static bool handle_request(int si);
 static void remove_sock(int *sarr, size_t *n, fd_set *fds, int *max, size_t si);
 static void send_xmlrpc_fault(int sock);
 static void send_xmlrpc_response(int sock, char *type, char *value);
+static void sendbuf(int sock, char *buf, size_t len);
 static int xr_sock_readbuf(int *sock, char **buf, size_t *bufsz, unsigned long len);
 static int xr_sock_readln(int *sock, char *buf, size_t bufsz);
 static void * xmlrpc_thread(void *arg);
@@ -805,7 +806,7 @@ send_xmlrpc_response(int sock, char *type, char *value)
 	char *buf;
 
 	asprintf(&buf, "HTTP/1.1 200 OK\r\nConnection: Keep-Alive\r\nContent-Type: text/xml\r\nContent-Length: %lu\r\n\r\n<?xml version=\"1.0\"?>\n<methodResponse><params><param><value><%s%s%s%s%s%s</value></param></params></methodResponse>", 61+(type == NULL ? 5 : ((strlen(type) * 2) + strlen(value) + 4)) + 42, type == NULL ? "nil/>" : type, type == NULL ? "" : ">", value == NULL ? "" : value, type == NULL ? "" : "</", type == NULL ? "" : type, type == NULL ? "" : ">");
-	send(sock, buf, strlen(buf), 0);
+	sendbuf(sock, buf, strlen(buf));
 	free(buf);
 }
 
@@ -1004,11 +1005,25 @@ b64_encode(char *target, size_t tlen, const char *source, size_t slen)
 }
 
 static void
+sendbuf(int sock, char *buf, size_t len)
+{
+	int ret;
+	size_t sent = 0;
+
+	while(sent < len) {
+		ret = send(sock, buf + sent, len - sent, 0);
+		if (ret == -1)
+			return;
+		sent += ret;
+	}
+}
+
+static void
 send_xmlrpc_fault(int sock)
 {
 	char *buf = "HTTP/1.1 501 Crappy Server\r\nConnection: Keep-Alive\r\nContent-Type: text/xml\r\nContent-Length: 293\r\n\r\n<?xml version=\"1.0\"?>\n<methodResponse><fault><value><struct><member><name>faultCode</name><value><int>73</int></value></member><member><name>faultString</name><value><string>This server is too crap to even know what you want.</string></value></member></struct></value></fault></methodResponse>";
 
-	send(sock, buf, strlen(buf), 0);
+	sendbuf(sock, buf, strlen(buf));
 }
 
 static void
