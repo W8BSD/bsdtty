@@ -576,7 +576,6 @@ do_macro(int fkey)
 
 /*
  * Must be called with RTS_WLOCK().
- * Will downgrade it to a read lock.
  */
 static void
 set_rts(bool newval, bool force)
@@ -586,7 +585,6 @@ set_rts(bool newval, bool force)
 	static char mode[16];
 
 	rts = newval;
-	RTS_DGLOCK();
 	if (!rts) {
 		if (force)
 			send_fsk->flush();

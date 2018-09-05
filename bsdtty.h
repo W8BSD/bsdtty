@@ -58,16 +58,8 @@ extern pthread_mutex_t bsdtty_lock;
 extern bool rts;
 extern pthread_mutex_t rts_lock;
 extern pthread_rwlock_t rts_rwlock;
-#define RTS_RLOCK()	assert(pthread_mutex_lock(&rts_lock) == 0 && \
-				pthread_rwlock_rdlock(&rts_rwlock) == 0 && \
-				pthread_mutex_unlock(&rts_lock) == 0)
-#define RTS_WLOCK()	assert(pthread_mutex_lock(&rts_lock) == 0 && \
-				pthread_rwlock_wrlock(&rts_rwlock) == 0 && \
-				pthread_mutex_unlock(&rts_lock) == 0)
-#define RTS_DGLOCK()	assert(pthread_mutex_lock(&rts_lock) == 0 && \
-				pthread_rwlock_unlock(&rts_rwlock) == 0 && \
-				pthread_rwlock_rdlock(&rts_rwlock) == 0 && \
-				pthread_mutex_unlock(&rts_lock) == 0)
+#define RTS_RLOCK()	assert(pthread_rwlock_rdlock(&rts_rwlock) == 0)
+#define RTS_WLOCK()	assert(pthread_rwlock_wrlock(&rts_rwlock) == 0)
 #define RTS_UNLOCK()	assert(pthread_rwlock_unlock(&rts_rwlock) == 0)
 
 int strtoi(const char *, char **endptr, int base);
