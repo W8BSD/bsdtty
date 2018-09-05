@@ -163,14 +163,11 @@ setup_xmlrpc(pthread_t *tid)
 					}
 					else {
 						close(sock);
-						sock = -1;
 						break;
 					}
-					continue;
 				}
 				fprintf(stderr, "%s: binding XML-RPC port\n", strerror(errno));
 				close(sock);
-				sock = -1;
 				break;
 			}
 		}
@@ -759,7 +756,7 @@ xr_sock_readbuf(int *sock, char **buf, size_t *bufsz, unsigned long len)
 				*sock = -1;
 				goto done;
 			case 1:
-				ret = recv(*sock, (*buf) + i, len > 0 ? len : 1, MSG_WAITALL);
+				ret = recv(*sock, (*buf) + i, len, MSG_WAITALL);
 				if (ret == -1) {
 					close(*sock);
 					*sock = -1;

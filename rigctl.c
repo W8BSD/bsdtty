@@ -113,6 +113,8 @@ sock_readln(int sock, char *buf, size_t bufsz)
 			}
 			return -1;
 		}
+		else if (ret == 0)	// Remote closed connection
+			break;
 		if (buf[i] == '\n')
 			goto done;
 	}

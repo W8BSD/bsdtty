@@ -414,11 +414,10 @@ static void
 flush_queue(void)
 {
 	struct afsk_queue *ent;
-	struct afsk_queue *next;
 
 	AQ_LOCK();
-	for (ent = qhead; ent != NULL; ent = next) {
-		next = ent->next;
+	for (ent = qhead; ent != NULL; ent = qhead) {
+		qhead = ent->next;
 		free(ent);
 		AQ_UNLOCK();
 		assert(sem_trywait(&qsem) == 0);

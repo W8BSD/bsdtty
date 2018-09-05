@@ -513,6 +513,7 @@ do_macro(int fkey)
 	size_t i;
 	int m;
 	char *str;
+	bool clear = false;
 
 	m = fkey - 1;
 	SETTING_RLOCK();
@@ -562,8 +563,10 @@ do_macro(int fkey)
 	}
 	if (len > 2)
 		if (strcasecmp(settings.macros[m] + len - 3, " CQ") == 0)
-			clear_rx_window();
+			clear = true;
 	SETTING_UNLOCK();
+	if (clear)
+		clear_rx_window();
 	return true;
 }
 
