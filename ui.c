@@ -60,7 +60,7 @@ static size_t tx_width;
 static size_t tx_height;
 static bool reset_tuning;
 static uint64_t last_freq;
-static char last_mode[16] = "";
+static char last_mode[32] = "";
 static pthread_mutex_t curses_lock = PTHREAD_MUTEX_INITIALIZER;
 #define CURS_LOCK()	assert(pthread_mutex_lock(&curses_lock) == 0)
 #define CURS_UNLOCK()	assert(pthread_mutex_unlock(&curses_lock) == 0)
@@ -260,6 +260,7 @@ update_tuning_aid(double mark, double space)
 					break;
 				case ERR & A_CHARTEXT:
 					reset_tuning = true;
+					CURS_UNLOCK();
 					return;
 				default:
 					printf_errno("no char %02x (%d) at %d %d", ch, ch, y, x);
@@ -410,7 +411,7 @@ show_freq(void)
 {
 	uint64_t freq;
 	char fstr[32];
-	char mode[16];
+	char mode[32];
 	bool american = false;
 	bool legal = false;
 	bool subband = false;
@@ -708,10 +709,11 @@ w_printf(WINDOW *win, const char *format, ...)
 	if (vasprintf(&msg, format, ap) < 0)
 		msg = NULL;
 	va_end(ap);
-	waddstr(win, msg);
-	if (msg)
+	if (msg) {
+		waddstr(win, msg);
 		free(msg);
-	wrefresh(win);
+		wrefresh(win);
+	}
 }
 
 static void
@@ -1621,7 +1623,7 @@ update_waterfall(void)
 	};
 	struct timespec now;
 	struct timespec diff;
-	double d = 4000 / tx_width;
+	double d = 4000.0 / tx_width;
 
 #if defined(CLOCK_MONOTONIC_FAST)
 	clock_gettime(CLOCK_MONOTONIC_FAST, &now);

@@ -671,10 +671,10 @@ create_matched_filter(double frequency)
 	SETTING_UNLOCK();
 
 	ret->buf = calloc(sizeof(*ret->buf), ret->len);
-	if (ret == NULL)
+	if (ret->buf == NULL)
 		printf_errno("allocating FIR buffer");
 	ret->coef = malloc(sizeof(*ret->coef) * ret->len);
-	if (ret == NULL)
+	if (ret->coef == NULL)
 		printf_errno("allocating FIR coef");
 
 	/*
@@ -763,7 +763,7 @@ void
 setup_spectrum_filters(size_t buckets)
 {
 	size_t i;
-	double freq_step = 4000 / (buckets + 1);
+	double freq_step = 4000.0 / (buckets + 1);
 	double freq;
 	double q;
 

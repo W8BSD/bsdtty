@@ -161,12 +161,17 @@ setup_xmlrpc(pthread_t *tid)
 						sleep(1);
 						continue;
 					}
-					else
+					else {
+						close(sock);
+						sock = -1;
 						break;
+					}
 					continue;
 				}
+				fprintf(stderr, "%s: binding XML-RPC port\n", strerror(errno));
 				close(sock);
 				sock = -1;
+				break;
 			}
 		}
 	}

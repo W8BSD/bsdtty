@@ -396,8 +396,10 @@ afsk_thread(void *arg)
 	for (;;) {
 		sem_wait(&qsem);
 		AQ_LOCK();
-		if (qhead == NULL)
+		if (qhead == NULL) {
+			AQ_UNLOCK();
 			continue;
+		}
 		ent = qhead;
 		qhead = qhead->next;
 		if (qhead == NULL)
@@ -418,7 +420,9 @@ flush_queue(void)
 	for (ent = qhead; ent != NULL; ent = next) {
 		next = ent->next;
 		free(ent);
+		AQ_UNLOCK();
 		assert(sem_trywait(&qsem) == 0);
+		AQ_LOCK();
 	}
 	qhead = qtail = NULL;
 	AQ_UNLOCK();

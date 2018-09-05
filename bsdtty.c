@@ -313,8 +313,6 @@ setup_log(void)
 {
 	time_t now;
 
-	if (log_file != NULL)
-		fclose(log_file);
 	if (log_file)
 		fclose(log_file);
 	SETTING_RLOCK();
@@ -837,12 +835,12 @@ fix_config(void)
 		settings.dsp_name = strdup("/dev/dsp");
 	if (settings.mark_freq < 1)
 		settings.mark_freq = 2125;
-	if (settings.mark_freq > settings.dsp_rate / 2)
-		settings.mark_freq = settings.dsp_rate / 2 - 170;
+	if (settings.mark_freq > (double)settings.dsp_rate / 2)
+		settings.mark_freq = (double)settings.dsp_rate / 2 - 170;
 	if (settings.space_freq < 1)
 		settings.space_freq = 2295;
-	if (settings.space_freq > settings.dsp_rate / 2)
-		settings.space_freq = settings.dsp_rate / 2;
+	if (settings.space_freq > (double)settings.dsp_rate / 2)
+		settings.space_freq = (double)settings.dsp_rate / 2;
 	if (settings.dsp_rate < 8000)
 		settings.dsp_rate = 8000;
 	if (settings.baud_denominator < 1)

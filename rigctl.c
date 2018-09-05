@@ -49,8 +49,11 @@ setup_rig_control(void)
 	if (settings.rigctld_host && settings.rigctld_host[0] &&
 	    settings.rigctld_port) {
 		sprintf(port, "%hu", settings.rigctld_port);
-		if (getaddrinfo(settings.rigctld_host, port, &hints, &ai) != 0)
+		if (getaddrinfo(settings.rigctld_host, port, &hints, &ai) != 0) {
+			SETTING_UNLOCK();
+			RC_UNLOCK();
 			return;
+		}
 		for (aip = ai; aip != NULL; aip = aip->ai_next) {
 			rigctld_socket = socket(aip->ai_family, aip->ai_socktype, aip->ai_protocol);
 			if (rigctld_socket == -1)
