@@ -108,7 +108,7 @@ setup_fsk(void)
 	SETTING_RLOCK();
 	fsk_tty = open(settings.tty_name, O_RDWR|O_DIRECT|O_NONBLOCK);
 	if (fsk_tty == -1)
-		printf_errno("unable to open %s");
+		printf_errno("unable to open %s", settings.tty_name);
 
 	/*
 	 * In case stty wasn't used on the init device, turn off DTR and
