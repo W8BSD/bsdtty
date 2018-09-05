@@ -102,7 +102,7 @@ sock_readln(int sock, char *buf, size_t bufsz)
 
 	for (i = 0; i < bufsz - 1; i++) {
 retry:
-		ret = recv(sock, buf + i, 1, MSG_WAITALL);
+		ret = recv(sock, &buf[i], 1, MSG_WAITALL);
 		if (ret == -1) {
 			if (errno == EINTR)
 				goto retry;
@@ -111,9 +111,8 @@ retry:
 		else if (ret == 0)	// Remote closed connection
 			break;
 		if (buf[i] == '\n')
-			goto done;
+			break;
 	}
-done:
 	buf[i] = 0;
 	while (i > 0 && buf[i-1] == '\n')
 		buf[--i] = 0;
