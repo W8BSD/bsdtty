@@ -135,6 +135,7 @@ static double fir_filter(int16_t value, struct fir_filter *f);
 static void feed_waterfall(int16_t value);
 static int read_rtty_ch(int state);
 static void * rx_thread(void *arg);
+static void rx_unlock(void *arg);
 
 static char chbuf[256];
 static size_t chh;
@@ -846,6 +847,12 @@ get_waterfall(size_t bucket)
 	return ret;
 }
 
+static void
+rx_unlock(void *arg)
+{
+	RX_UNLOCK();
+}
+
 static void *
 rx_thread(void *arg)
 {
@@ -862,6 +869,9 @@ rx_thread(void *arg)
 #else
 	pthread_set_name_np(pthread_self(), "RX");
 #endif
+
+	pthread_cleanup_push(rx_unlock, NULL);
+
 	for (;;) {
 		ret = read_rtty_ch(ret);
 		if (is_fsk_char(ret)) {
@@ -887,6 +897,8 @@ rx_thread(void *arg)
 		}
 		pthread_testcancel();
 	}
+
+	pthread_cleanup_pop(true);
 
 	return NULL;
 }
