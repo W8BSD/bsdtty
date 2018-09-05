@@ -523,7 +523,7 @@ do_macro(int fkey)
 		return true;
 	}
 	if (strncasecmp(settings.macros[m], "CQ CQ", 5) == 0)
-		clear_rx_window();
+		clear = true;
 	len = strlen(settings.macros[m]);
 	for (i = 0; i < len; i++) {
 		switch (settings.macros[m][i]) {
