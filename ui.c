@@ -1160,7 +1160,9 @@ done:
 		}
 		fclose(config);
 		SETTING_UNLOCK();
+		CURS_UNLOCK();
 		reinit();
+		CURS_LOCK();
 	}
 	else
 		SETTING_UNLOCK();
