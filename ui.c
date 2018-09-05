@@ -522,8 +522,8 @@ check_input(void)
 	ch = wgetch(rx);
 	typeahead(-1);
 	if (ch == KEY_MOUSE) {
-		getmouse(&ev);
 		CURS_LOCK();
+		getmouse(&ev);
 		if (ev.bstate & (BUTTON3_PRESSED | BUTTON3_CLICKED))
 			toggle_figs(ev.y, ev.x);
 		else if (ev.bstate & (BUTTON1_PRESSED | BUTTON1_CLICKED))
