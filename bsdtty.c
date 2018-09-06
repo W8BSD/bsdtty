@@ -378,7 +378,6 @@ do_tx(int *rxstate)
 	ch = get_input();
 	switch (ch) {
 		case -1:
-			send_fsk->diddle();
 			break;
 		case 3:
 			return false;

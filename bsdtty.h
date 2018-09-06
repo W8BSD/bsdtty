@@ -36,7 +36,6 @@ struct send_fsk_api {
 	void (*send_preamble)(void);
 	void (*send_char)(char ch);
 	void (*setup)(void);
-	void (*diddle)(void);
 	void (*end_fsk)(void);
 	void (*flush)(void);
 };

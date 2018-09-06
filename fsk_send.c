@@ -46,7 +46,6 @@ static void end_fsk_tx(void);
 static void send_fsk_preamble(void);
 static void send_fsk_char(char ch);
 static void setup_fsk(void);
-static void diddle_fsk(void);
 
 static void
 fsk_toggle_reverse(void)
@@ -157,12 +156,6 @@ setup_fsk(void)
 }
 
 static void
-diddle_fsk(void)
-{
-	// fsk can't diddle.
-}
-
-static void
 end_fsk_thread(void)
 {
 	// There is no FSK thread to end.
@@ -180,7 +173,6 @@ struct send_fsk_api fsk_api = {
 	.send_preamble = send_fsk_preamble,
 	.send_char = send_fsk_char,
 	.setup = setup_fsk,
-	.diddle = diddle_fsk,
 	.end_fsk = end_fsk_thread,
 	.flush = flush_fsk
 };

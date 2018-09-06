@@ -90,11 +90,14 @@ static pthread_mutex_t afsk_mutex = PTHREAD_MUTEX_INITIALIZER;
 static sem_t qsem;
 static bool qsem_initialized;
 static pthread_t afsk_threadid;
+static bool afsk_end;
+static pthread_cond_t afsk_ended = PTHREAD_COND_INITIALIZER;
 
 static void adjust_wave(struct afsk_buf *buf, double start_phase);
 static void * afsk_thread(void *arg);
 static void generate_afsk_samples(void);
 static void generate_sine(double freq, struct afsk_buf *buf);
+static void open_afsk_dev(void);
 static void send_afsk_buf(struct afsk_buf *buf);
 static void send_afsk_bit(enum afsk_bit bit);
 static void swap_afsk_bufs(struct afsk_buf *buf1, struct afsk_buf *buf2);
@@ -236,9 +239,18 @@ write_afsk_buf(struct afsk_buf *buf)
 {
 	size_t sent = 0;
 	int ret;
+	int fd;
 
+	AQ_LOCK();
+	fd = dsp_afsk;
+	if (fd == -1) {
+		open_afsk_dev();
+		fd = dsp_afsk;
+		assert(fd != -1);
+	}
+	AQ_UNLOCK();
 	while (sent < buf->size) {
-		ret = write(dsp_afsk, buf->buf + sent, (buf->size - sent) * sizeof(buf->buf[0]));
+		ret = write(fd, buf->buf + sent, (buf->size - sent) * sizeof(buf->buf[0]));
 		if (ret == -1)
 			printf_errno("writing AFSK buffer");
 		ret /= sizeof(buf->buf[0]);
@@ -285,6 +297,7 @@ static void
 end_afsk_tx(void)
 {
 	AFSK_LOCK();
+
 	switch(last_afsk_bit) {
 		case AFSK_UNKNOWN:
 			printf_errno("ending after unknown bit");
@@ -297,19 +310,39 @@ end_afsk_tx(void)
 			send_afsk_buf(&mark_to_zero);
 			break;
 	}
-	if (ioctl(dsp_afsk, SNDCTL_DSP_SYNC, NULL) == -1)
-		printf_errno("syncing AFSK playback");
+	afsk_end = true;
+	assert(pthread_cond_wait(&afsk_ended, & afsk_mutex) == 0);
 	AFSK_UNLOCK();
 }
 
 static void
-setup_afsk()
+setup_afsk(void)
+{
+	AFSK_LOCK();
+	SETTING_RLOCK();
+	// We open it here just in case there's an error
+	generate_afsk_samples();
+	open_afsk_dev();
+	SETTING_UNLOCK();
+	if (qsem_initialized) {
+		sem_destroy(&qsem);
+		qsem_initialized = false;
+	}
+	if (sem_init(&qsem, 0, 0) == -1)
+		printf_errno("initializing semaphore");
+	qsem_initialized = true;
+	if (pthread_create(&afsk_threadid, NULL, afsk_thread, NULL) != 0)
+		printf_errno("Creating AFSK thread");
+	close(dsp_afsk);
+	dsp_afsk = -1;
+	AFSK_UNLOCK();
+}
+
+static void
+open_afsk_dev(void)
 {
 	int i;
 
-	AFSK_LOCK();
-	SETTING_RLOCK();
-	generate_afsk_samples();
 	if (dsp_afsk != -1)
 		close(dsp_afsk);
 	dsp_afsk = open(settings.dsp_name, O_WRONLY);
@@ -324,17 +357,6 @@ setup_afsk()
 		printf_errno("setting afsk channels");
 	if (ioctl(dsp_afsk, SNDCTL_DSP_SPEED, &afsk_dsp_rate) == -1)
 		printf_errno("setting sample rate");
-	SETTING_UNLOCK();
-	if (qsem_initialized) {
-		sem_destroy(&qsem);
-		qsem_initialized = false;
-	}
-	if (sem_init(&qsem, 0, 0) == -1)
-		printf_errno("initializing semaphore");
-	qsem_initialized = true;
-	if (pthread_create(&afsk_threadid, NULL, afsk_thread, NULL) != 0)
-		printf_errno("Creating AFSK thread");
-	AFSK_UNLOCK();
 }
 
 static void
@@ -404,11 +426,22 @@ afsk_thread(void *arg)
 		}
 		ent = qhead;
 		qhead = qhead->next;
-		if (qhead == NULL)
+		if (qhead == NULL) {
 			qtail = NULL;
+			if (!afsk_end)
+				diddle_afsk();
+		}
 		AQ_UNLOCK();
 		write_afsk_buf(ent->buf);
 		free(ent);
+		AQ_LOCK();
+		if (qhead == NULL && afsk_end) {
+			afsk_end = false;
+			close(dsp_afsk);
+			dsp_afsk = -1;
+			pthread_cond_broadcast(&afsk_ended);
+		}
+		AQ_UNLOCK();
 	}
 }
 
@@ -443,7 +476,6 @@ struct send_fsk_api afsk_api = {
 	.send_preamble = send_afsk_preamble,
 	.send_char = send_afsk_char,
 	.setup = setup_afsk,
-	.diddle = diddle_afsk,
 	.end_fsk = end_afsk_thread,
 	.flush = flush_queue
 };
