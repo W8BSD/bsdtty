@@ -241,14 +241,14 @@ write_afsk_buf(struct afsk_buf *buf)
 	int ret;
 	int fd;
 
-	AQ_LOCK();
+	AFSK_LOCK();
 	fd = dsp_afsk;
 	if (fd == -1) {
 		open_afsk_dev();
 		fd = dsp_afsk;
 		assert(fd != -1);
 	}
-	AQ_UNLOCK();
+	AFSK_UNLOCK();
 	while (sent < buf->size) {
 		ret = write(fd, buf->buf + sent, (buf->size - sent) * sizeof(buf->buf[0]));
 		if (ret == -1)
@@ -439,6 +439,7 @@ afsk_thread(void *arg)
 			diddle_afsk();
 			diddle = false;
 		}
+		AFSK_LOCK();
 		AQ_LOCK();
 		if (qhead == NULL && afsk_end) {
 			afsk_end = false;
@@ -447,6 +448,7 @@ afsk_thread(void *arg)
 			pthread_cond_broadcast(&afsk_ended);
 		}
 		AQ_UNLOCK();
+		AFSK_UNLOCK();
 	}
 }
 
