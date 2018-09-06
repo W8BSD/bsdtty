@@ -92,11 +92,12 @@ static bool qsem_initialized;
 static pthread_t afsk_threadid;
 
 static void adjust_wave(struct afsk_buf *buf, double start_phase);
+static void * afsk_thread(void *arg);
 static void generate_afsk_samples(void);
 static void generate_sine(double freq, struct afsk_buf *buf);
 static void send_afsk_buf(struct afsk_buf *buf);
 static void send_afsk_bit(enum afsk_bit bit);
-static void * afsk_thread(void *arg);
+static void swap_afsk_bufs(struct afsk_buf *buf1, struct afsk_buf *buf2);
 static void flush_queue(void);
 
 /*
@@ -337,6 +338,15 @@ setup_afsk()
 }
 
 static void
+swap_afsk_bufs(struct afsk_buf *buf1, struct afsk_buf *buf2)
+{
+	struct afsk_buf tmp = *buf1;
+
+	*buf1 = *buf2;
+	*buf2 = tmp;
+}
+
+static void
 afsk_toggle_reverse(void)
 {
 	int16_t *tbuf;
@@ -345,17 +355,9 @@ afsk_toggle_reverse(void)
 	/*
 	 * TX Stuff, swap samples
 	 */
-	tbuf = zero_to_mark.buf;
-	zero_to_mark.buf = zero_to_space.buf;
-	zero_to_space.buf = tbuf;
-
-	tbuf = mark_to_zero.buf;
-	mark_to_zero.buf = space_to_zero.buf;
-	space_to_zero.buf = tbuf;
-
-	tbuf = mark_to_mark.buf;
-	mark_to_mark.buf = space_to_space.buf;
-	space_to_space.buf = tbuf;
+	swap_afsk_bufs(&zero_to_mark, &zero_to_space);
+	swap_afsk_bufs(&mark_to_zero, &space_to_zero);
+	swap_afsk_bufs(&mark_to_mark, &space_to_space);
 	AFSK_UNLOCK();
 }
 
