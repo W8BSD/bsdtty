@@ -533,7 +533,7 @@ do_macro(int fkey)
 				break;
 			case '`':
 				BSDTTY_LOCK();
-				str = strdup(their_callsign);
+				str = strdup(their_callsign ? their_callsign : "");
 				BSDTTY_UNLOCK();
 				send_string(str);
 				break;
