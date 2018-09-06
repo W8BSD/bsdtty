@@ -407,6 +407,7 @@ afsk_thread(void *arg)
 	struct afsk_queue *ent;
 	sigset_t blk;
 	(void)arg;
+	bool diddle = false;
 
 	memset(&blk, 0xff, sizeof(blk));
 	assert(pthread_sigmask(SIG_BLOCK, &blk, NULL) == 0);
@@ -429,11 +430,15 @@ afsk_thread(void *arg)
 		if (qhead == NULL) {
 			qtail = NULL;
 			if (!afsk_end)
-				diddle_afsk();
+				diddle = true;
 		}
 		AQ_UNLOCK();
 		write_afsk_buf(ent->buf);
 		free(ent);
+		if (diddle) {
+			diddle_afsk();
+			diddle = false;
+		}
 		AQ_LOCK();
 		if (qhead == NULL && afsk_end) {
 			afsk_end = false;
