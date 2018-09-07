@@ -25,7 +25,7 @@
  */
 
 #define NOISE_CORRECT
-#define MATCHED_BUCKETS
+//#define MATCHED_BUCKETS
 
 #include <sys/ioctl.h>
 #include <sys/soundcard.h>
