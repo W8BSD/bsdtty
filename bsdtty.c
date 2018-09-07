@@ -497,11 +497,13 @@ do_tx(int *rxstate)
 void
 send_string(char *str)
 {
+	char *ch;
+
 	if (str == NULL)
 		return;
 
-	for (; *str; str++)
-		send_char(*str);
+	for (ch = str; *ch; ch++)
+		send_char(*ch);
 	free(str);
 }
 
@@ -531,7 +533,7 @@ do_macro(int fkey)
 				break;
 			case '`':
 				BSDTTY_LOCK();
-				str = strdup(their_callsign);
+				str = strdup(their_callsign ? their_callsign : "");
 				BSDTTY_UNLOCK();
 				send_string(str);
 				break;

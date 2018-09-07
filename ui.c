@@ -182,13 +182,13 @@ update_tuning_aid(double mark, double space)
 
 	if (nsamp == -1) {
 		SETTING_RLOCK();
-		nsamp = settings.dsp_rate/((((double)settings.baud_numerator / settings.baud_denominator))*7.5);
+		nsamp = settings.dsp_rate/((((double)settings.baud_numerator / settings.baud_denominator)));
 		SETTING_UNLOCK();
 	}
 	if (buf == NULL) {
-		buf = malloc(sizeof(*buf) * nsamp * 2 + 1);
+		buf = malloc(sizeof(*buf) * nsamp * 2);
 		if (buf == NULL)
-			printf_errno("alocating %d bytes", sizeof(*buf) * nsamp * 2 + 1);
+			printf_errno("alocating %d bytes", sizeof(*buf) * nsamp * 2);
 	}
 
 	buf[wsamp*2] = mark;

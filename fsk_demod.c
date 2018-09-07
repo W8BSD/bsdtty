@@ -302,7 +302,7 @@ setup_audio(void)
 	SETTING_WLOCK();
 	dsp = open(settings.dsp_name, O_RDONLY);
 	if (dsp == -1)
-		printf_errno("unable to open sound device");
+		printf_errno("unable to open sound device %s", settings.dsp_name);
 	i = AFMT_S16_NE;
 	if (ioctl(dsp, SNDCTL_DSP_SETFMT, &i) == -1)
 		printf_errno("setting format");
