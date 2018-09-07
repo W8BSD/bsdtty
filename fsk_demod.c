@@ -25,6 +25,7 @@
  */
 
 #define NOISE_CORRECT
+#define MATCHED_BUCKETS
 
 #include <sys/ioctl.h>
 #include <sys/soundcard.h>
@@ -104,7 +105,11 @@ static size_t hfs_stop2;
 /* Audio variables */
 static int dsp = -1;
 static int dsp_channels = 1;
+#ifdef MATCHED_BUCKETS
+static struct fir_filter **waterfall_bp;
+#else
 static struct bq_filter **waterfall_bp;
+#endif
 static struct bq_filter **waterfall_lp;
 size_t waterfall_width;
 static pthread_mutex_t waterfall_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -772,7 +777,11 @@ setup_spectrum_filters(size_t buckets)
 	if (waterfall_bp) {
 		for (i = 0; i < waterfall_width; i++) {
 			if (waterfall_bp[i])
+#ifdef MATCHED_BUCKETS
+				free_fir_filter(waterfall_bp[i]);
+#else
 				free_bq_filter(waterfall_bp[i]);
+#endif
 		}
 		free(waterfall_bp);
 		waterfall_bp = NULL;
@@ -807,7 +816,11 @@ setup_spectrum_filters(size_t buckets)
 	for (i = 0; i < buckets; i++) {
 		freq = (freq_step / 2) + freq_step * i;
 		q = freq / freq_step;
+#ifdef MATCHED_BUCKETS
+		waterfall_bp[i] = create_matched_filter(freq);
+#else
 		waterfall_bp[i] = calc_bpf_coef(freq, q);
+#endif
 		if (waterfall_bp[i] == NULL) {
 			WF_UNLOCK();
 			setup_spectrum_filters(0);
@@ -829,7 +842,11 @@ feed_waterfall(int16_t value)
 		return;
 	WF_LOCK();
 	for (i = 0; i < waterfall_width; i++) {
+#ifdef MATCHED_BUCKETS
+		v = fir_filter(value, waterfall_bp[i]);
+#else
 		v = bq_filter(value, waterfall_bp[i]);
+#endif
 		bq_filter(v * v, waterfall_lp[i]);
 	}
 	WF_UNLOCK();
