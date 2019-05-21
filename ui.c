@@ -62,8 +62,14 @@ static bool reset_tuning;
 static uint64_t last_freq;
 static char last_mode[32] = "";
 static pthread_mutex_t curses_lock = PTHREAD_MUTEX_INITIALIZER;
-#define CURS_LOCK()	assert(pthread_mutex_lock(&curses_lock) == 0)
-#define CURS_UNLOCK()	assert(pthread_mutex_unlock(&curses_lock) == 0)
+#define CURS_LOCK()	do {                                  \
+	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL); \
+	assert(pthread_mutex_lock(&curses_lock) == 0);        \
+} while(0)
+#define CURS_UNLOCK()	do {                                  \
+	assert(pthread_mutex_unlock(&curses_lock) == 0);      \
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);  \
+} while(0)
 static void update_captured_call_locked(const char *call);
 
 enum tuning_styles tuning_style = TUNE_ASCIINANAS;

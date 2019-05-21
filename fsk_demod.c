@@ -867,6 +867,7 @@ get_waterfall(size_t bucket)
 static void
 rx_unlock(void *arg)
 {
+	pthread_mutex_trylock(&rx_lock);
 	RX_UNLOCK();
 }
 
