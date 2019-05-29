@@ -24,7 +24,7 @@
  *
  */
 
-#define NOISE_CORRECT
+//#define NOISE_CORRECT
 //#define MATCHED_BUCKETS
 
 #include <sys/ioctl.h>
